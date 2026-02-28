@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/expense_provider.dart';
 import '../../models/group_model.dart';
 import '../../models/user_model.dart';
+import '../../models/expense_model.dart';
+import '../../services/expense_service.dart';
 import '../../utils/constants.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final GroupModel group;
+  final String currentUserId;
 
-  const AddExpenseScreen({super.key, required this.group});
+  const AddExpenseScreen({
+    super.key,
+    required this.group,
+    required this.currentUserId,
+  });
 
   @override
   State<AddExpenseScreen> createState() => _AddExpenseScreenState();
@@ -22,6 +26,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
+  final ExpenseService _expenseService = ExpenseService();
 
   String? _selectedPayer;
   List<String> _selectedParticipants = [];
@@ -45,7 +50,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedPayer = context.read<AuthProvider>().firebaseUser?.uid;
+    _selectedPayer = widget.currentUserId;
     _selectedParticipants = List.from(widget.group.members);
     _fetchMemberDetails();
   }
@@ -129,19 +134,27 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
     setState(() => _isLoading = true);
 
-    final currentUserId = context.read<AuthProvider>().firebaseUser?.uid;
     final amount = double.parse(_amountController.text.trim());
+    final splitAmount = amount / _selectedParticipants.length;
+
+    final splits = _selectedParticipants
+        .map((userId) => ExpenseSplit(
+              userId: userId,
+              amount: double.parse(splitAmount.toStringAsFixed(2)),
+            ))
+        .toList();
 
     try {
-      final result = await context.read<ExpenseProvider>().createEqualSplitExpense(
+      final result = await _expenseService.createExpense(
         groupId: widget.group.groupId,
         description: _descriptionController.text.trim(),
         totalAmount: amount,
         paidBy: _selectedPayer!,
-        participantIds: _selectedParticipants,
+        splits: splits,
+        splitType: SplitType.equal,
         category: _selectedCategory,
         date: _selectedDate,
-        createdBy: currentUserId!,
+        createdBy: widget.currentUserId,
       );
 
       if (!mounted) return;
@@ -155,7 +168,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             backgroundColor: AppConstants.successColor,
           ),
         );
-        Navigator.pop(context);
+        Navigator.pop(context, true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -197,7 +210,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Description
                     CustomTextField(
                       controller: _descriptionController,
                       label: 'Description',
@@ -212,7 +224,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Amount
                     CustomTextField(
                       controller: _amountController,
                       label: 'Amount (£)',
@@ -233,7 +244,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Date picker
                     GestureDetector(
                       onTap: _selectDate,
                       child: Container(
@@ -266,7 +276,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Category
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
@@ -294,7 +303,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Paid by
                     const Text('Paid by',
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.bold)),
@@ -322,7 +330,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Split between
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -381,14 +388,12 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Split preview
                     if (_selectedParticipants.isNotEmpty &&
                         _amountController.text.isNotEmpty)
                       Builder(
                         builder: (context) {
                           final amount =
-                              double.tryParse(_amountController.text.trim()) ??
-                                  0;
+                              double.tryParse(_amountController.text.trim()) ?? 0;
                           final perPerson =
                               amount / _selectedParticipants.length;
                           return Container(
@@ -420,7 +425,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                       ),
                     const SizedBox(height: 32),
 
-                    // Add button
                     CustomButton(
                       text: 'Add Expense',
                       onPressed: _isLoading ? null : _handleAddExpense,
