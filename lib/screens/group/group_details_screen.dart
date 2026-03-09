@@ -10,6 +10,7 @@ import '../../models/expense_model.dart';
 import '../../services/expense_service.dart';
 import '../../utils/constants.dart';
 import 'add_expense_screen.dart';
+import 'scan_receipt_screen.dart';
 
 class GroupDetailsScreen extends StatefulWidget {
   final String groupId;
@@ -24,7 +25,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ExpenseService _expenseService = ExpenseService();
-  
+
   Map<String, UserModel> _memberCache = {};
   bool _isLoadingMembers = true;
   bool _initialized = false;
@@ -166,6 +167,74 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen>
     );
   }
 
+  void _showAddExpenseOptions(GroupModel group, String currentUserId) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.defaultPadding),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Add Expense',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppConstants.primaryColor,
+                  child: Icon(Icons.document_scanner, color: Colors.white),
+                ),
+                title: const Text('Scan Receipt'),
+                subtitle: const Text('Use AI to extract data from receipt'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ScanReceiptScreen(
+                        group: group,
+                        currentUserId: currentUserId,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.grey[600],
+                  child: const Icon(Icons.edit, color: Colors.white),
+                ),
+                title: const Text('Manual Entry'),
+                subtitle: const Text('Enter expense details manually'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final result = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AddExpenseScreen(
+                        group: group,
+                        currentUserId: currentUserId,
+                      ),
+                    ),
+                  );
+                  if (result == true) {
+                    _calculateBalances();
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = context.watch<AuthProvider>().firebaseUser?.uid;
@@ -216,19 +285,8 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen>
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final result = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddExpenseScreen(
-                group: group,
-                currentUserId: currentUserId ?? '',
-              ),
-            ),
-          );
-          if (result == true) {
-            _calculateBalances();
-          }
+        onPressed: () {
+          _showAddExpenseOptions(group, currentUserId ?? '');
         },
         backgroundColor: AppConstants.primaryColor,
         icon: const Icon(Icons.add),

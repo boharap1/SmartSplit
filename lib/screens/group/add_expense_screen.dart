@@ -4,18 +4,22 @@ import '../../models/group_model.dart';
 import '../../models/user_model.dart';
 import '../../models/expense_model.dart';
 import '../../services/expense_service.dart';
+import '../../services/receipt_scanner_service.dart';
 import '../../utils/constants.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
+import 'scan_receipt_screen.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final GroupModel group;
   final String currentUserId;
+  final ScannedReceiptData? scannedData;
 
   const AddExpenseScreen({
     super.key,
     required this.group,
     required this.currentUserId,
+    this.scannedData,
   });
 
   @override
@@ -53,6 +57,25 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     _selectedPayer = widget.currentUserId;
     _selectedParticipants = List.from(widget.group.members);
     _fetchMemberDetails();
+    _applyScannedData();
+  }
+
+  void _applyScannedData() {
+    if (widget.scannedData != null) {
+      final data = widget.scannedData!;
+
+      if (data.merchantName != null) {
+        _descriptionController.text = data.merchantName!;
+      }
+
+      if (data.totalAmount != null) {
+        _amountController.text = data.totalAmount!.toStringAsFixed(2);
+      }
+
+      if (data.date != null) {
+        _selectedDate = data.date!;
+      }
+    }
   }
 
   @override
@@ -107,6 +130,18 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     if (picked != null) {
       setState(() => _selectedDate = picked);
     }
+  }
+
+  void _navigateToScanReceipt() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScanReceiptScreen(
+          group: widget.group,
+          currentUserId: widget.currentUserId,
+        ),
+      ),
+    );
   }
 
   Future<void> _handleAddExpense() async {
@@ -199,6 +234,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         title: const Text('Add Expense'),
         backgroundColor: AppConstants.primaryColor,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            onPressed: _navigateToScanReceipt,
+            icon: const Icon(Icons.document_scanner),
+            tooltip: 'Scan Receipt',
+          ),
+        ],
       ),
       body: _isLoadingMembers
           ? const Center(
@@ -210,6 +252,49 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    // Scanned data indicator
+                    if (widget.scannedData != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: AppConstants.successColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                          border: Border.all(color: AppConstants.successColor.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.document_scanner, color: AppConstants.successColor),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'Data auto-filled from scanned receipt',
+                                style: TextStyle(color: AppConstants.successColor),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _navigateToScanReceipt,
+                              child: const Text('Rescan'),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // Scan Receipt Button (if no scanned data)
+                    if (widget.scannedData == null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: OutlinedButton.icon(
+                          onPressed: _navigateToScanReceipt,
+                          icon: const Icon(Icons.document_scanner),
+                          label: const Text('Scan Receipt with AI'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.all(16),
+                            side: const BorderSide(color: AppConstants.primaryColor),
+                          ),
+                        ),
+                      ),
+
                     CustomTextField(
                       controller: _descriptionController,
                       label: 'Description',
