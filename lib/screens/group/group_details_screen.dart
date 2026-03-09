@@ -11,6 +11,8 @@ import '../../services/expense_service.dart';
 import '../../utils/constants.dart';
 import 'add_expense_screen.dart';
 import 'scan_receipt_screen.dart';
+import 'settlements_screen.dart';
+
 
 class GroupDetailsScreen extends StatefulWidget {
   final String groupId;
@@ -421,6 +423,33 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen>
             ],
           ),
         ),
+        const SizedBox(height: 20),
+
+        // Settle Up Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SettlementsScreen(
+                    group: group,
+                    currentUserId: currentUserId,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.handshake),
+            label: const Text('Settle Up'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppConstants.successColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+        ),
+
         const SizedBox(height: 24),
         const Text('Member Balances',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
