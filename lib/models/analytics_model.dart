@@ -1,3 +1,5 @@
+import 'expense_model.dart';
+
 class CategorySpending {
   final String category;
   final double amount;
@@ -63,6 +65,8 @@ class GroupAnalytics {
   final List<UserSpending> userSpending;
   final String? topCategory;
   final String? topSpender;
+  final List<ExpenseModel> rawExpenses;
+  final Map<String, String> userNames;
 
   GroupAnalytics({
     required this.totalExpenses,
@@ -73,5 +77,7 @@ class GroupAnalytics {
     required this.userSpending,
     this.topCategory,
     this.topSpender,
+    this.rawExpenses = const [],
+    this.userNames = const {},
   });
 }
