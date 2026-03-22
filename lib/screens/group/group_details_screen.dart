@@ -12,7 +12,7 @@ import '../../utils/constants.dart';
 import 'add_expense_screen.dart';
 import 'scan_receipt_screen.dart';
 import 'settlements_screen.dart';
-
+import 'analytics_screen.dart';
 
 class GroupDetailsScreen extends StatefulWidget {
   final String groupId;
@@ -266,6 +266,20 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen>
         title: Text(group.groupName),
         backgroundColor: AppConstants.primaryColor,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.analytics),
+            tooltip: 'Analytics',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AnalyticsScreen(group: group),
+                ),
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
