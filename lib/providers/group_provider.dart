@@ -363,11 +363,8 @@ class GroupProvider extends ChangeNotifier {
   /// - Useful when navigating from list to details
   /// - Returns null if not found (user left group?)
   GroupModel? getGroupById(String groupId) {
-    try {
-      return _groups.firstWhere((g) => g.groupId == groupId);
-    } catch (e) {
-      return null;
-    }
+    final matches = _groups.where((g) => g.groupId == groupId);
+    return matches.isEmpty ? null : matches.first;
   }
 
   /// Clears any error message.

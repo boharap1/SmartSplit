@@ -39,7 +39,7 @@ class ExpenseService {
       await docRef.set(expense.toFirestore());
       return (expense: expense, error: null);
     } catch (e) {
-      return (expense: null, error: 'Error: ${e.toString()}');
+      return (expense: null, error: 'Failed to create expense.');
     }
   }
 
@@ -59,7 +59,7 @@ class ExpenseService {
       await _expensesCollection(groupId).doc(expenseId).delete();
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to delete expense.');
     }
   }
 

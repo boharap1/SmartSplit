@@ -32,8 +32,7 @@ class GroupService {
 
       return (group: group, error: null);
     } catch (e) {
-      // Show actual error for debugging
-      return (group: null, error: 'Error: ${e.toString()}');
+      return (group: null, error: 'Failed to create group.');
     }
   }
 
@@ -95,7 +94,7 @@ class GroupService {
 
       return (group: updatedGroup, error: null);
     } catch (e) {
-      return (group: null, error: 'Error: ${e.toString()}');
+      return (group: null, error: 'Failed to join group.');
     }
   }
 
@@ -161,7 +160,7 @@ class GroupService {
       await _groupsCollection.doc(groupId).update(updates);
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to update group.');
     }
   }
 
@@ -191,7 +190,7 @@ class GroupService {
 
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to leave group.');
     }
   }
 
@@ -215,7 +214,7 @@ class GroupService {
       await _groupsCollection.doc(groupId).delete();
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to delete group.');
     }
   }
 
@@ -247,7 +246,7 @@ class GroupService {
 
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to remove member.');
     }
   }
 }

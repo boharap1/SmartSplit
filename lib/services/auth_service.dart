@@ -45,8 +45,7 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       return (user: null, error: _getErrorMessage(e.code));
     } catch (e) {
-      // Show actual error for debugging
-      return (user: null, error: 'Error: ${e.toString()}');
+      return (user: null, error: 'Registration failed. Please try again.');
     }
   }
 
@@ -90,8 +89,7 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       return (user: null, error: _getErrorMessage(e.code));
     } catch (e) {
-      // Show actual error for debugging
-      return (user: null, error: 'Error: ${e.toString()}');
+      return (user: null, error: 'Sign in failed. Please try again.');
     }
   }
 
@@ -106,7 +104,7 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       return (success: false, error: _getErrorMessage(e.code));
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to send reset email. Please try again.');
     }
   }
 
@@ -118,7 +116,7 @@ class AuthService {
       }
       return (success: false, error: 'No user signed in.');
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to resend verification email. Please try again.');
     }
   }
 
@@ -161,7 +159,7 @@ class AuthService {
       case 'too-many-requests':
         return 'Too many attempts. Please try again later.';
       default:
-        return 'Error: $code';
+        return 'Something went wrong. Please try again.';
     }
   }
 }
