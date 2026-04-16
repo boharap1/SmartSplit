@@ -32,7 +32,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
   SettlementResult? _settlementResult;
   List<SettlementRecord> _settlementHistory = [];
   Map<String, UserModel> _memberCache = {};
-  Map<String, BankDetails?> _bankDetailsCache = {};
+  final Map<String, BankDetails?> _bankDetailsCache = {};
   bool _isLoading = true;
   bool _isSettling = false;
 
@@ -92,8 +92,9 @@ class _SettlementsScreenState extends State<SettlementsScreen>
 
   Future<void> _loadSettlementResult() async {
     try {
-      final result = await _settlementService
-          .calculateOptimizedSettlements(widget.group.groupId);
+      final result = await _settlementService.calculateOptimizedSettlements(
+        widget.group.groupId,
+      );
       print('Settlement result: ${result.settlements.length} settlements');
       print('Net balances: ${result.netBalances}');
       print('Error: ${result.error}');
@@ -115,9 +116,9 @@ class _SettlementsScreenState extends State<SettlementsScreen>
   }
 
   void _loadSettlementHistory() {
-    _settlementService
-        .getSettlementHistory(widget.group.groupId)
-        .listen((history) {
+    _settlementService.getSettlementHistory(widget.group.groupId).listen((
+      history,
+    ) {
       if (mounted) {
         setState(() => _settlementHistory = history);
       }
@@ -128,9 +129,11 @@ class _SettlementsScreenState extends State<SettlementsScreen>
     return _memberCache[userId]?.name ?? 'Unknown';
   }
 
-  Future<void> _showSettlementConfirmation(OptimizedSettlement settlement) async {
+  Future<void> _showSettlementConfirmation(
+    OptimizedSettlement settlement,
+  ) async {
     final toUserBankDetails = _bankDetailsCache[settlement.toUserId];
-    
+
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -295,7 +298,9 @@ class _SettlementsScreenState extends State<SettlementsScreen>
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: AppConstants.primaryColor),
+              child: CircularProgressIndicator(
+                color: AppConstants.primaryColor,
+              ),
             )
           : TabBarView(
               controller: _tabController,
@@ -320,7 +325,11 @@ class _SettlementsScreenState extends State<SettlementsScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 64, color: AppConstants.errorColor),
+            const Icon(
+              Icons.error_outline,
+              size: 64,
+              color: AppConstants.errorColor,
+            ),
             const SizedBox(height: 16),
             Text(
               'Calculation Error',
@@ -338,7 +347,11 @@ class _SettlementsScreenState extends State<SettlementsScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.check_circle, size: 80, color: AppConstants.successColor),
+            const Icon(
+              Icons.check_circle,
+              size: 80,
+              color: AppConstants.successColor,
+            ),
             const SizedBox(height: 16),
             const Text(
               'All Settled Up!',
@@ -408,9 +421,9 @@ class _SettlementsScreenState extends State<SettlementsScreen>
         ),
         const SizedBox(height: 12),
 
-        ...result.netBalances.entries
-            .where((e) => e.value.abs() > 0.01)
-            .map((entry) {
+        ...result.netBalances.entries.where((e) => e.value.abs() > 0.01).map((
+          entry,
+        ) {
           final balance = entry.value;
           final isPositive = balance > 0;
 
@@ -479,7 +492,11 @@ class _SettlementsScreenState extends State<SettlementsScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.check_circle, size: 80, color: AppConstants.successColor),
+            const Icon(
+              Icons.check_circle,
+              size: 80,
+              color: AppConstants.successColor,
+            ),
             const SizedBox(height: 16),
             const Text(
               'No Payments Needed',
@@ -573,11 +590,13 @@ class _SettlementsScreenState extends State<SettlementsScreen>
         side: isCurrentUserPayer
             ? const BorderSide(color: AppConstants.primaryColor, width: 2)
             : isCurrentUserReceiver
-                ? const BorderSide(color: AppConstants.successColor, width: 2)
-                : BorderSide.none,
+            ? const BorderSide(color: AppConstants.successColor, width: 2)
+            : BorderSide.none,
       ),
       child: InkWell(
-        onTap: _isSettling ? null : () => _showSettlementConfirmation(settlement),
+        onTap: _isSettling
+            ? null
+            : () => _showSettlementConfirmation(settlement),
         borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         child: Padding(
           padding: const EdgeInsets.all(AppConstants.defaultPadding),
@@ -591,9 +610,13 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                       children: [
                         CircleAvatar(
                           radius: 24,
-                          backgroundColor: AppConstants.errorColor.withOpacity(0.2),
+                          backgroundColor: AppConstants.errorColor.withOpacity(
+                            0.2,
+                          ),
                           child: Text(
-                            fromName.isNotEmpty ? fromName[0].toUpperCase() : '?',
+                            fromName.isNotEmpty
+                                ? fromName[0].toUpperCase()
+                                : '?',
                             style: const TextStyle(
                               color: AppConstants.errorColor,
                               fontWeight: FontWeight.bold,
@@ -648,7 +671,8 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                       children: [
                         CircleAvatar(
                           radius: 24,
-                          backgroundColor: AppConstants.successColor.withOpacity(0.2),
+                          backgroundColor: AppConstants.successColor
+                              .withOpacity(0.2),
                           child: Text(
                             toName.isNotEmpty ? toName[0].toUpperCase() : '?',
                             style: const TextStyle(
@@ -680,11 +704,16 @@ class _SettlementsScreenState extends State<SettlementsScreen>
               ),
 
               // Bank details preview
-              if (toUserBankDetails != null && toUserBankDetails.isComplete) ...[
+              if (toUserBankDetails != null &&
+                  toUserBankDetails.isComplete) ...[
                 const Divider(height: 24),
                 Row(
                   children: [
-                    const Icon(Icons.account_balance, size: 16, color: Colors.grey),
+                    const Icon(
+                      Icons.account_balance,
+                      size: 16,
+                      color: Colors.grey,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       '${toUserBankDetails.bankName} • ${toUserBankDetails.formattedSortCode} • ${toUserBankDetails.maskedAccountNumber}',
@@ -815,9 +844,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                 onPressed: () => _deleteSettlement(record),
                 icon: const Icon(Icons.delete_outline, size: 18),
                 label: const Text('Undo'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.grey,
-                ),
+                style: TextButton.styleFrom(foregroundColor: Colors.grey),
               ),
             ),
           ],
@@ -864,7 +891,8 @@ class _SettlementConfirmationSheetState
   void _copyBankDetails() {
     if (widget.bankDetails == null) return;
 
-    final details = '''
+    final details =
+        '''
 Account Holder: ${widget.bankDetails!.accountHolderName}
 Bank: ${widget.bankDetails!.bankName}
 Sort Code: ${widget.bankDetails!.formattedSortCode}
@@ -920,7 +948,9 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: AppConstants.primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                  borderRadius: BorderRadius.circular(
+                    AppConstants.borderRadius,
+                  ),
                 ),
                 child: Column(
                   children: [
@@ -943,7 +973,8 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
               const SizedBox(height: 24),
 
               // Bank details (if available)
-              if (widget.bankDetails != null && widget.bankDetails!.isComplete) ...[
+              if (widget.bankDetails != null &&
+                  widget.bankDetails!.isComplete) ...[
                 const Text(
                   'Pay to:',
                   style: TextStyle(fontWeight: FontWeight.bold),
@@ -953,16 +984,27 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.borderRadius,
+                    ),
                     border: Border.all(color: Colors.grey[300]!),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildBankDetailRow('Name', widget.bankDetails!.accountHolderName),
+                      _buildBankDetailRow(
+                        'Name',
+                        widget.bankDetails!.accountHolderName,
+                      ),
                       _buildBankDetailRow('Bank', widget.bankDetails!.bankName),
-                      _buildBankDetailRow('Sort Code', widget.bankDetails!.formattedSortCode),
-                      _buildBankDetailRow('Account', widget.bankDetails!.accountNumber),
+                      _buildBankDetailRow(
+                        'Sort Code',
+                        widget.bankDetails!.formattedSortCode,
+                      ),
+                      _buildBankDetailRow(
+                        'Account',
+                        widget.bankDetails!.accountNumber,
+                      ),
                       const SizedBox(height: 8),
                       SizedBox(
                         width: double.infinity,
@@ -987,7 +1029,11 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
               Wrap(
                 spacing: 8,
                 children: [
-                  _buildPaymentMethodChip('Bank Transfer', 'bank_transfer', Icons.account_balance),
+                  _buildPaymentMethodChip(
+                    'Bank Transfer',
+                    'bank_transfer',
+                    Icons.account_balance,
+                  ),
                   _buildPaymentMethodChip('Cash', 'cash', Icons.money),
                   _buildPaymentMethodChip('Other', 'other', Icons.more_horiz),
                 ],
@@ -1001,7 +1047,9 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
                   labelText: 'Payment Reference (optional)',
                   hintText: 'e.g., Bank transaction ID',
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.borderRadius,
+                    ),
                   ),
                 ),
               ),
@@ -1014,7 +1062,9 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
                   labelText: 'Note (optional)',
                   hintText: 'e.g., Paid via Monzo',
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.borderRadius,
+                    ),
                   ),
                 ),
               ),
@@ -1078,11 +1128,7 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
     return ChoiceChip(
       label: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 4),
-          Text(label),
-        ],
+        children: [Icon(icon, size: 16), const SizedBox(width: 4), Text(label)],
       ),
       selected: isSelected,
       selectedColor: AppConstants.primaryColor.withOpacity(0.2),
