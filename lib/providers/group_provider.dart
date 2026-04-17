@@ -256,6 +256,7 @@ class GroupProvider extends ChangeNotifier {
   /// Updates group details (name, description).
   Future<bool> updateGroup({
     required String groupId,
+    required String requestingUserId,
     String? groupName,
     String? description,
   }) async {
@@ -264,6 +265,7 @@ class GroupProvider extends ChangeNotifier {
 
     final result = await _groupService.updateGroup(
       groupId: groupId,
+      requestingUserId: requestingUserId,
       groupName: groupName,
       description: description,
     );
@@ -349,6 +351,71 @@ class GroupProvider extends ChangeNotifier {
       notifyListeners();
     }
 
+    return result.success;
+  }
+
+  // ============================================================
+  // INVITE CODE OPERATIONS
+  // ============================================================
+
+  Future<({String? code, String? error})> generateInviteCode({
+    required String groupId,
+    required String userId,
+  }) async {
+    final result = await _groupService.generateInviteCode(
+      groupId: groupId,
+      userId: userId,
+    );
+    if (result.code == null) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
+    return result;
+  }
+
+  // ============================================================
+  // ADMIN OPERATIONS
+  // ============================================================
+
+  Future<bool> assignAdmin({
+    required String groupId,
+    required String targetUserId,
+    required String requestingUserId,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+
+    final result = await _groupService.assignAdmin(
+      groupId: groupId,
+      targetUserId: targetUserId,
+      requestingUserId: requestingUserId,
+    );
+
+    if (!result.success) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
+    return result.success;
+  }
+
+  Future<bool> removeAdmin({
+    required String groupId,
+    required String targetUserId,
+    required String requestingUserId,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+
+    final result = await _groupService.removeAdmin(
+      groupId: groupId,
+      targetUserId: targetUserId,
+      requestingUserId: requestingUserId,
+    );
+
+    if (!result.success) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
     return result.success;
   }
 

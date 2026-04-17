@@ -483,8 +483,11 @@ class GroupsTab extends StatelessWidget {
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
+              final userId =
+                  context.read<AuthProvider>().firebaseUser?.uid ?? '';
               await context.read<GroupProvider>().updateGroup(
                 groupId: group.groupId,
+                requestingUserId: userId,
                 groupName: nameCtrl.text.trim(),
                 description: descCtrl.text.trim().isEmpty
                     ? null
@@ -506,133 +509,200 @@ class GroupsTab extends StatelessWidget {
   }
 
   void _showInviteSheet(BuildContext context, GroupModel group) {
+    final userId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (userId == null) return;
+    final isAdmin = group.isAdmin(userId);
+
+    // Local mutable state for the sheet (updated when code is generated)
+    var sheetCode = group.hasActiveInvite ? group.activeInviteCode : null;
+    var sheetExpiry = group.hasActiveInvite ? group.activeInviteExpiry : null;
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Invite Members',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: AppConstants.primaryColor.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Group Code',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppConstants.primaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      group.groupCode,
-                      style: const TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 8,
-                        color: AppConstants.primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: group.groupCode));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Code copied!'),
-                            backgroundColor: AppConstants.successColor,
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('Copy Code'),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Clipboard.setData(
-                          ClipboardData(
-                            text:
-                                'Join my SmartSplit group "${group.groupName}" with code: ${group.groupCode}',
-                          ),
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Invite message copied!'),
-                            backgroundColor: AppConstants.successColor,
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.share, size: 18),
-                      label: const Text('Share Link'),
-                    ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Invite Members',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // QR placeholder
-              Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.qr_code_2_rounded,
-                        size: 60,
-                        color: Colors.grey[400],
+                  const SizedBox(height: 4),
+                  Text(
+                    group.groupName,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  ),
+                  const SizedBox(height: 20),
+                  if (sheetCode != null) ...[
+                    // Active invite code display
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppConstants.primaryColor.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      Text(
-                        'QR Coming Soon',
-                        style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.timer_outlined,
+                                  size: 14,
+                                  color: AppConstants.successColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Expires at ${_formatExpiryTime(sheetExpiry!)}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppConstants.successColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            sheetCode!,
+                            style: const TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 8,
+                              color: AppConstants.primaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Clipboard.setData(
+                                  ClipboardData(text: sheetCode!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Code copied!'),
+                                  backgroundColor: AppConstants.successColor,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.copy, size: 18),
+                            label: const Text('Copy Code'),
+                          ),
+                        ),
+                        if (isAdmin) ...[
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                final result = await context
+                                    .read<GroupProvider>()
+                                    .generateInviteCode(
+                                      groupId: group.groupId,
+                                      userId: userId,
+                                    );
+                                if (result.code != null) {
+                                  setSheetState(() {
+                                    sheetCode = result.code;
+                                    sheetExpiry = DateTime.now()
+                                        .add(const Duration(minutes: 10));
+                                  });
+                                }
+                              },
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text('New Code'),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ] else ...[
+                    // No active code
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        isAdmin
+                            ? 'Generate a temporary invite code (valid 10 min).'
+                            : 'No active invite code.\nAsk a group admin to generate one.',
+                        style:
+                            TextStyle(color: Colors.grey[600], fontSize: 14),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    if (isAdmin) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            final result = await context
+                                .read<GroupProvider>()
+                                .generateInviteCode(
+                                  groupId: group.groupId,
+                                  userId: userId,
+                                );
+                            if (result.code != null) {
+                              setSheetState(() {
+                                sheetCode = result.code;
+                                sheetExpiry = DateTime.now()
+                                    .add(const Duration(minutes: 10));
+                              });
+                            } else if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(result.error ??
+                                      'Failed to generate code'),
+                                  backgroundColor: AppConstants.errorColor,
+                                ),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.add_link),
+                          label: const Text('Generate Invite Code'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppConstants.primaryColor,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
                       ),
                     ],
-                  ),
-                ),
+                  ],
+                  const SizedBox(height: 16),
+                ],
               ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  String _formatExpiryTime(DateTime expiry) {
+    final h = expiry.hour.toString().padLeft(2, '0');
+    final m = expiry.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   Future<void> _confirmLeaveGroup(
@@ -646,12 +716,98 @@ class GroupsTab extends StatelessWidget {
     final userBalance = balances[userId] ?? 0;
 
     if (userBalance.abs() > 0.01 && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Settle your balance (£${userBalance.abs().toStringAsFixed(2)}) before leaving',
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Cannot Leave Group', style: TextStyle(fontSize: 17)),
+            ],
           ),
-          backgroundColor: AppConstants.errorColor,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'You have an outstanding balance in "${group.groupName}" '
+                'that must be settled before you can leave.',
+                style: TextStyle(color: Colors.grey[700], fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: userBalance > 0
+                      ? AppConstants.successColor.withValues(alpha: 0.08)
+                      : AppConstants.errorColor.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: userBalance > 0
+                        ? AppConstants.successColor.withValues(alpha: 0.3)
+                        : AppConstants.errorColor.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      userBalance > 0
+                          ? Icons.arrow_circle_up
+                          : Icons.arrow_circle_down,
+                      color: userBalance > 0
+                          ? AppConstants.successColor
+                          : AppConstants.errorColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      userBalance > 0
+                          ? 'You are owed £${userBalance.toStringAsFixed(2)}'
+                          : 'You owe £${userBalance.abs().toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: userBalance > 0
+                            ? AppConstants.successColor
+                            : AppConstants.errorColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lightbulb_outline,
+                        size: 14, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Go to the Settle Up tab to clear your balance first.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.blue[700]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
         ),
       );
       return;
@@ -700,13 +856,105 @@ class GroupsTab extends StatelessWidget {
   ) async {
     final settlementService = SettlementService();
     final balances = await settlementService.calculateBalances(group.groupId);
-    final hasUnsettled = balances.values.any((b) => b.abs() > 0.01);
+    final unsettled =
+        balances.entries.where((e) => e.value.abs() > 0.01).toList();
 
-    if (hasUnsettled && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('All settlements must be cleared before deleting'),
-          backgroundColor: AppConstants.errorColor,
+    if (unsettled.isNotEmpty && context.mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('Cannot Delete Group',
+                    style: TextStyle(fontSize: 17)),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'All balances must be £0.00 before deleting "${group.groupName}". '
+                '${unsettled.length} member${unsettled.length > 1 ? 's have' : ' has'} outstanding balances:',
+                style: TextStyle(color: Colors.grey[700], fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              ...unsettled.map((e) {
+                final amount = e.value;
+                final isOwed = amount > 0;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isOwed
+                            ? Icons.arrow_circle_up
+                            : Icons.arrow_circle_down,
+                        size: 16,
+                        color: isOwed
+                            ? AppConstants.successColor
+                            : AppConstants.errorColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '…${e.key.substring(e.key.length > 6 ? e.key.length - 6 : 0)}',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
+                      Text(
+                        isOwed
+                            ? '+£${amount.toStringAsFixed(2)}'
+                            : '−£${amount.abs().toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: isOwed
+                              ? AppConstants.successColor
+                              : AppConstants.errorColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lightbulb_outline,
+                        size: 14, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Open the group → Settle Up tab to clear all balances.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.blue[700]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
         ),
       );
       return;
@@ -809,7 +1057,7 @@ class GroupsTab extends StatelessWidget {
                   child: const Icon(Icons.login, color: Colors.orange),
                 ),
                 title: const Text('Join Group'),
-                subtitle: const Text('Scan QR or enter 6-digit code'),
+                subtitle: const Text('Enter 6-digit code to join'),
                 onTap: () {
                   Navigator.pop(ctx);
                   Navigator.push(

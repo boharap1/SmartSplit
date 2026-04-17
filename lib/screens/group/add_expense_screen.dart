@@ -204,13 +204,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
     if (mounted) {
       if (result.expense != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Expense added successfully!'),
-            backgroundColor: AppConstants.successColor,
-          ),
-        );
-        Navigator.pop(context);
+        Navigator.pop(context, widget.group.groupName);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

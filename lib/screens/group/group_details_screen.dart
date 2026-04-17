@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -6,22 +7,10 @@ import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/group_model.dart';
 import '../../models/user_model.dart';
+import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
 import '../../widgets/custom_text_field.dart';
 
-/// GroupDetailsScreen shows detailed information about a group.
-///
-/// Features:
-/// - Group info (name, description, code, created date)
-/// - Member list with names and profile initials
-/// - Owner actions: edit, remove members, delete group
-/// - Member actions: leave group
-/// - Real-time updates via Firestore stream
-///
-/// Architecture:
-/// - Uses selectGroup() to subscribe to real-time updates
-/// - Fetches member details separately (user names)
-/// - Clears subscription when leaving screen
 class GroupDetailsScreen extends StatefulWidget {
   final String groupId;
 
@@ -32,22 +21,18 @@ class GroupDetailsScreen extends StatefulWidget {
 }
 
 class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
-  /// Cache of member user data.
-  ///
-  /// Why cache?
-  /// - Avoid re-fetching on every rebuild
-  /// - Map for O(1) lookup by userId
-  /// - Updated when members change
   Map<String, UserModel> _memberCache = {};
-
-  /// Loading state for member data.
+  Set<String> _knownMemberIds = {};
   bool _isLoadingMembers = true;
+
+  // Countdown timer for active invite code
+  Timer? _countdownTimer;
+  int _secondsRemaining = 0;
+  String? _trackedInviteCode;
 
   @override
   void initState() {
     super.initState();
-    // Start listening to group updates
-    // This sets up real-time stream in GroupProvider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<GroupProvider>().selectGroup(widget.groupId);
     });
@@ -55,111 +40,122 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
 
   @override
   void dispose() {
-    // Clear the selected group stream when leaving
-    // Prevents memory leaks and unnecessary Firestore reads
+    _countdownTimer?.cancel();
     context.read<GroupProvider>().clearSelectedGroup();
     super.dispose();
   }
 
-  /// Fetches user data for all group members.
-  ///
-  /// Called when:
-  /// - Screen first loads
-  /// - Members list changes (new member joins, member leaves)
-  ///
-  /// Why separate fetch (not in Provider)?
-  /// - Member details are UI concern, not group state
-  /// - Keeps GroupProvider focused on group data
-  /// - Could move to separate UserService later
   Future<void> _fetchMemberDetails(List<String> memberIds) async {
     if (memberIds.isEmpty) {
-      setState(() {
-        _isLoadingMembers = false;
-      });
+      setState(() => _isLoadingMembers = false);
       return;
     }
 
     try {
-      // Fetch all members in one query using 'whereIn'
-      // Note: 'whereIn' limited to 10 items per query
-      // Future upgrade: Batch queries for groups > 10 members
       final firestore = FirebaseFirestore.instance;
+      final Map<String, UserModel> newCache = {};
 
-      // For groups with <= 10 members (most cases)
-      if (memberIds.length <= 10) {
+      for (int i = 0; i < memberIds.length; i += 10) {
+        final chunk = memberIds.sublist(
+          i,
+          (i + 10 > memberIds.length) ? memberIds.length : i + 10,
+        );
         final snapshot = await firestore
             .collection('users')
-            .where(FieldPath.documentId, whereIn: memberIds)
+            .where(FieldPath.documentId, whereIn: chunk)
             .get();
-
-        final Map<String, UserModel> newCache = {};
         for (final doc in snapshot.docs) {
           newCache[doc.id] = UserModel.fromFirestore(doc);
         }
-
-        if (mounted) {
-          setState(() {
-            _memberCache = newCache;
-            _isLoadingMembers = false;
-          });
-        }
-      } else {
-        // For larger groups: batch into chunks of 10
-        // Firestore 'whereIn' limit is 10 items
-        final Map<String, UserModel> newCache = {};
-
-        for (int i = 0; i < memberIds.length; i += 10) {
-          final chunk = memberIds.sublist(
-            i,
-            (i + 10 > memberIds.length) ? memberIds.length : i + 10,
-          );
-
-          final snapshot = await firestore
-              .collection('users')
-              .where(FieldPath.documentId, whereIn: chunk)
-              .get();
-
-          for (final doc in snapshot.docs) {
-            newCache[doc.id] = UserModel.fromFirestore(doc);
-          }
-        }
-
-        if (mounted) {
-          setState(() {
-            _memberCache = newCache;
-            _isLoadingMembers = false;
-          });
-        }
       }
-    } catch (e) {
+
       if (mounted) {
         setState(() {
+          _memberCache = newCache;
           _isLoadingMembers = false;
         });
       }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingMembers = false);
     }
   }
 
-  /// Copies group code to clipboard.
-  void _copyGroupCode(String code) {
+  void _startCountdown(DateTime expiry) {
+    _countdownTimer?.cancel();
+    final remaining = expiry.difference(DateTime.now()).inSeconds;
+    if (remaining <= 0) {
+      setState(() => _secondsRemaining = 0);
+      return;
+    }
+    setState(() => _secondsRemaining = remaining);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final secs = expiry.difference(DateTime.now()).inSeconds;
+      if (secs <= 0) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+      } else {
+        setState(() => _secondsRemaining = secs);
+      }
+    });
+  }
+
+  String _formatCountdown(int seconds) {
+    if (seconds <= 0) return 'Expired';
+    final mins = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '$mins:${secs.toString().padLeft(2, '0')} left';
+  }
+
+  void _copyCode(String code) {
     Clipboard.setData(ClipboardData(text: code));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Group code copied!'),
+        content: Text('Invite code copied!'),
         backgroundColor: AppConstants.successColor,
         duration: Duration(seconds: 2),
       ),
     );
   }
 
-  /// Shows edit group dialog.
+  Future<void> _generateInviteCode(GroupModel group) async {
+    final userId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (userId == null) return;
+
+    final result = await context.read<GroupProvider>().generateInviteCode(
+      groupId: group.groupId,
+      userId: userId,
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.code != null
+                ? 'Invite code generated! Valid for 10 minutes.'
+                : result.error ?? 'Failed to generate invite code',
+          ),
+          backgroundColor: result.code != null
+              ? AppConstants.successColor
+              : AppConstants.errorColor,
+        ),
+      );
+    }
+  }
+
   void _showEditGroupDialog(GroupModel group) {
+    final requestingUserId =
+        context.read<AuthProvider>().firebaseUser?.uid ?? '';
     final nameController = TextEditingController(text: group.groupName);
-    final descController = TextEditingController(text: group.description ?? '');
+    final descController =
+        TextEditingController(text: group.description ?? '');
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         ),
@@ -185,14 +181,14 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
               final newName = nameController.text.trim();
               if (newName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                ScaffoldMessenger.of(dialogCtx).showSnackBar(
                   const SnackBar(
                     content: Text('Group name cannot be empty'),
                     backgroundColor: AppConstants.errorColor,
@@ -200,11 +196,12 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                 );
                 return;
               }
+              Navigator.pop(dialogCtx);
 
-              Navigator.pop(context); // Close dialog first
-
-              final success = await context.read<GroupProvider>().updateGroup(
+              final groupProvider = context.read<GroupProvider>();
+              final success = await groupProvider.updateGroup(
                 groupId: group.groupId,
+                requestingUserId: requestingUserId,
                 groupName: newName,
                 description: descController.text.trim(),
               );
@@ -229,36 +226,156 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
-  /// Shows leave group confirmation dialog.
-  void _showLeaveGroupDialog(GroupModel group, String userId) {
+  // Shows a dialog explaining which members have outstanding balances
+  // blocking a group action (delete / leave).
+  void _showBlockedDialog({
+    required String title,
+    required String action,
+    required List<MapEntry<String, double>> unsettled,
+  }) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(fontSize: 17)),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'The following members have outstanding balances. '
+              'All balances must reach £0.00 before you can $action this group:',
+              style: TextStyle(color: Colors.grey[700], fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            ...unsettled.map((e) {
+              final memberId = e.key;
+              final amount = e.value;
+              final name =
+                  _memberCache[memberId]?.name ?? 'Member …${memberId.substring(memberId.length - 4)}';
+              final isOwed = amount > 0;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    Icon(
+                      isOwed ? Icons.arrow_circle_up : Icons.arrow_circle_down,
+                      size: 18,
+                      color: isOwed
+                          ? AppConstants.successColor
+                          : AppConstants.errorColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(name,
+                          style: const TextStyle(fontWeight: FontWeight.w500)),
+                    ),
+                    Text(
+                      isOwed
+                          ? '+£${amount.toStringAsFixed(2)}'
+                          : '−£${amount.abs().toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isOwed
+                            ? AppConstants.successColor
+                            : AppConstants.errorColor,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.08),
+                borderRadius:
+                    BorderRadius.circular(AppConstants.borderRadius),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lightbulb_outline,
+                      size: 16, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Go to the Settle Up tab to record payments and clear all balances.',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showLeaveGroupDialog(
+    GroupModel group,
+    String userId,
+  ) async {
+    final balances =
+        await SettlementService().calculateBalances(group.groupId);
+    final userBalance = balances[userId] ?? 0;
+
+    if (userBalance.abs() > 0.01) {
+      if (!mounted) return;
+      _showBlockedDialog(
+        title: 'Cannot Leave Group',
+        action: 'leave',
+        unsettled: [MapEntry(userId, userBalance)],
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final groupProvider = context.read<GroupProvider>();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         ),
         title: const Text('Leave Group'),
         content: Text(
           'Are you sure you want to leave "${group.groupName}"?\n\n'
-          'You will need the group code to rejoin.',
+          'You will need a new invite code to rejoin.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
-
-              final success = await context.read<GroupProvider>().leaveGroup(
+              Navigator.pop(dialogCtx);
+              final success = await groupProvider.leaveGroup(
                 groupId: group.groupId,
                 userId: userId,
               );
-
               if (mounted) {
                 if (success) {
-                  Navigator.pop(context); // Go back to home
+                  Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('You have left the group'),
@@ -269,8 +386,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        context.read<GroupProvider>().errorMessage ??
-                            'Failed to leave group',
+                        groupProvider.errorMessage ?? 'Failed to leave group',
                       ),
                       backgroundColor: AppConstants.errorColor,
                     ),
@@ -288,11 +404,30 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
-  /// Shows delete group confirmation dialog (owner only).
-  void _showDeleteGroupDialog(GroupModel group, String userId) {
+  Future<void> _showDeleteGroupDialog(
+    GroupModel group,
+    String userId,
+  ) async {
+    final balances =
+        await SettlementService().calculateBalances(group.groupId);
+    final unsettled =
+        balances.entries.where((e) => e.value.abs() > 0.01).toList();
+
+    if (unsettled.isNotEmpty) {
+      if (!mounted) return;
+      _showBlockedDialog(
+        title: 'Cannot Delete Group',
+        action: 'delete',
+        unsettled: unsettled,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final groupProvider = context.read<GroupProvider>();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         ),
@@ -303,21 +438,19 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // Close dialog
-
-              final success = await context.read<GroupProvider>().deleteGroup(
+              Navigator.pop(dialogCtx);
+              final success = await groupProvider.deleteGroup(
                 groupId: group.groupId,
                 userId: userId,
               );
-
               if (mounted) {
                 if (success) {
-                  Navigator.pop(context); // Go back to home
+                  Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Group deleted'),
@@ -328,8 +461,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        context.read<GroupProvider>().errorMessage ??
-                            'Failed to delete group',
+                        groupProvider.errorMessage ?? 'Failed to delete group',
                       ),
                       backgroundColor: AppConstants.errorColor,
                     ),
@@ -347,18 +479,36 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
-  /// Shows remove member confirmation dialog (owner only).
-  void _showRemoveMemberDialog(
+  Future<void> _showRemoveMemberDialog(
     GroupModel group,
     String memberId,
     String memberName,
-  ) {
+  ) async {
     final currentUserId = context.read<AuthProvider>().firebaseUser?.uid;
     if (currentUserId == null) return;
 
+    final balances =
+        await SettlementService().calculateBalances(group.groupId);
+    final memberBalance = balances[memberId] ?? 0;
+    if (memberBalance.abs() > 0.01) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$memberName has an outstanding balance of '
+            '£${memberBalance.abs().toStringAsFixed(2)}. Settle up first.',
+          ),
+          backgroundColor: AppConstants.errorColor,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final groupProvider = context.read<GroupProvider>();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         ),
@@ -366,19 +516,17 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         content: Text('Remove $memberName from the group?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
-
-              final success = await context.read<GroupProvider>().removeMember(
+              Navigator.pop(dialogCtx);
+              final success = await groupProvider.removeMember(
                 groupId: group.groupId,
                 memberId: memberId,
                 requestingUserId: currentUserId,
               );
-
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -404,6 +552,68 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
+  Future<void> _assignAdmin(
+    GroupModel group,
+    String memberId,
+    String memberName,
+  ) async {
+    final currentUserId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (currentUserId == null) return;
+    final groupProvider = context.read<GroupProvider>();
+
+    final success = await groupProvider.assignAdmin(
+      groupId: group.groupId,
+      targetUserId: memberId,
+      requestingUserId: currentUserId,
+    );
+    final errorMsg = groupProvider.errorMessage;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '$memberName is now an admin'
+                : errorMsg ?? 'Failed to assign admin',
+          ),
+          backgroundColor:
+              success ? AppConstants.successColor : AppConstants.errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeAdminRole(
+    GroupModel group,
+    String memberId,
+    String memberName,
+  ) async {
+    final currentUserId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (currentUserId == null) return;
+    final groupProvider = context.read<GroupProvider>();
+
+    final success = await groupProvider.removeAdmin(
+      groupId: group.groupId,
+      targetUserId: memberId,
+      requestingUserId: currentUserId,
+    );
+    final errorMsg = groupProvider.errorMessage;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '$memberName is no longer an admin'
+                : errorMsg ?? 'Failed to remove admin',
+          ),
+          backgroundColor:
+              success ? AppConstants.successColor : AppConstants.errorColor,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = context.watch<AuthProvider>().firebaseUser?.uid;
@@ -412,7 +622,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
       builder: (context, groupProvider, child) {
         final group = groupProvider.selectedGroup;
 
-        // Loading state
         if (group == null) {
           return Scaffold(
             appBar: AppBar(
@@ -428,15 +637,31 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
           );
         }
 
-        // Check if current user is owner
         final isOwner = group.isOwner(currentUserId ?? '');
+        final isAdmin = group.isAdmin(currentUserId ?? '');
 
-        // Fetch member details when members list changes
-        // Using addPostFrameCallback to avoid calling setState during build
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_memberCache.length != group.members.length ||
-              !group.members.every((id) => _memberCache.containsKey(id))) {
+          if (!mounted) return;
+
+          // Refresh member list when members change
+          final currentIds = group.members.toSet();
+          if (currentIds.length != _knownMemberIds.length ||
+              !currentIds.every(_knownMemberIds.contains)) {
+            _knownMemberIds = currentIds;
             _fetchMemberDetails(group.members);
+          }
+
+          // Start/stop invite countdown when invite changes
+          final newCode =
+              group.hasActiveInvite ? group.activeInviteCode : null;
+          if (newCode != _trackedInviteCode) {
+            _trackedInviteCode = newCode;
+            if (newCode != null && group.activeInviteExpiry != null) {
+              _startCountdown(group.activeInviteExpiry!);
+            } else {
+              _countdownTimer?.cancel();
+              _countdownTimer = null;
+            }
           }
         });
 
@@ -447,7 +672,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
             backgroundColor: AppConstants.primaryColor,
             foregroundColor: Colors.white,
             actions: [
-              if (isOwner)
+              if (isAdmin)
                 IconButton(
                   icon: const Icon(Icons.edit),
                   onPressed: () => _showEditGroupDialog(group),
@@ -470,10 +695,8 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                       value: 'leave',
                       child: Row(
                         children: [
-                          Icon(
-                            Icons.exit_to_app,
-                            color: AppConstants.errorColor,
-                          ),
+                          Icon(Icons.exit_to_app,
+                              color: AppConstants.errorColor),
                           SizedBox(width: 12),
                           Text('Leave Group'),
                         ],
@@ -499,58 +722,11 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Group Info Card
                 _buildGroupInfoCard(group),
                 const SizedBox(height: 16),
-
-                // Group Code Card
-                _buildGroupCodeCard(group),
+                _buildInviteCodeCard(group, isAdmin),
                 const SizedBox(height: 16),
-
-                // Members Card
-                _buildMembersCard(group, isOwner, currentUserId ?? ''),
-                const SizedBox(height: 24),
-
-                // Placeholder for future: Expenses summary, balances, etc.
-                Container(
-                  padding: const EdgeInsets.all(AppConstants.largePadding),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(
-                      AppConstants.borderRadius,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.receipt_long,
-                        size: 48,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Expenses Coming Soon!',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Track shared expenses in Sprint 3',
-                        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                      ),
-                    ],
-                  ),
-                ),
+                _buildMembersCard(group, isOwner, isAdmin, currentUserId ?? ''),
               ],
             ),
           ),
@@ -559,7 +735,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
-  /// Builds the group info card.
   Widget _buildGroupInfoCard(GroupModel group) {
     return Container(
       padding: const EdgeInsets.all(AppConstants.largePadding),
@@ -568,7 +743,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -582,7 +757,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppConstants.primaryColor.withOpacity(0.1),
+                  color: AppConstants.primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
@@ -606,14 +781,16 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                     const SizedBox(height: 4),
                     Text(
                       '${group.memberCount} member${group.memberCount != 1 ? 's' : ''}',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                      style:
+                          TextStyle(color: Colors.grey[600], fontSize: 14),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          if (group.description != null && group.description!.isNotEmpty) ...[
+          if (group.description != null &&
+              group.description!.isNotEmpty) ...[
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 12),
@@ -640,56 +817,158 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
-  /// Builds the group code card.
-  Widget _buildGroupCodeCard(GroupModel group) {
+  Widget _buildInviteCodeCard(GroupModel group, bool isAdmin) {
+    final hasActive = group.hasActiveInvite;
+
     return Container(
       padding: const EdgeInsets.all(AppConstants.largePadding),
       decoration: BoxDecoration(
-        color: AppConstants.primaryColor.withOpacity(0.1),
+        color: hasActive
+            ? AppConstants.primaryColor.withValues(alpha: 0.08)
+            : Colors.grey[50],
         borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-        border: Border.all(color: AppConstants.primaryColor.withOpacity(0.3)),
+        border: Border.all(
+          color: hasActive
+              ? AppConstants.primaryColor.withValues(alpha: 0.3)
+              : Colors.grey[300]!,
+        ),
       ),
       child: Column(
         children: [
-          const Text(
-            'Group Code',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 8),
+          // Header row
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              Icon(
+                Icons.link,
+                size: 18,
+                color:
+                    hasActive ? AppConstants.primaryColor : Colors.grey[500],
+              ),
+              const SizedBox(width: 8),
               Text(
-                group.groupCode,
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 6,
-                  color: AppConstants.primaryColor,
+                'Invite Code',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: hasActive ? Colors.black87 : Colors.grey[600],
                 ),
               ),
-              const SizedBox(width: 12),
-              IconButton(
-                onPressed: () => _copyGroupCode(group.groupCode),
-                icon: const Icon(Icons.copy, color: AppConstants.primaryColor),
-                tooltip: 'Copy code',
-              ),
+              if (hasActive) ...[
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppConstants.successColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.timer_outlined,
+                          size: 12, color: AppConstants.successColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatCountdown(_secondsRemaining),
+                        style: const TextStyle(
+                          color: AppConstants.successColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Share this code to invite others',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
+          const SizedBox(height: 16),
+
+          if (hasActive) ...[
+            // Tap-to-copy code display
+            GestureDetector(
+              onTap: () => _copyCode(group.activeInviteCode!),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius:
+                      BorderRadius.circular(AppConstants.borderRadius),
+                  border: Border.all(
+                    color:
+                        AppConstants.primaryColor.withValues(alpha: 0.4),
+                    width: 2,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      group.activeInviteCode!,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 6,
+                        color: AppConstants.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.copy,
+                        color: AppConstants.primaryColor, size: 20),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tap to copy  •  Valid for 10 minutes from generation',
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
+            ),
+            if (isAdmin) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _generateInviteCode(group),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Generate New Code'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppConstants.primaryColor,
+                  side: const BorderSide(color: AppConstants.primaryColor),
+                ),
+              ),
+            ],
+          ] else ...[
+            if (isAdmin)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _generateInviteCode(group),
+                  icon: const Icon(Icons.add_link),
+                  label: const Text('Generate Invite Code'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppConstants.primaryColor,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              )
+            else
+              Text(
+                'No active invite code.\nAsk an admin to generate one.',
+                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+          ],
         ],
       ),
     );
   }
 
-  /// Builds the members list card.
   Widget _buildMembersCard(
     GroupModel group,
     bool isOwner,
+    bool isAdmin,
     String currentUserId,
   ) {
     return Container(
@@ -699,7 +978,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -714,7 +993,8 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
               const SizedBox(width: 12),
               const Text(
                 'Members',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style:
+                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const Spacer(),
               Container(
@@ -723,7 +1003,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: AppConstants.primaryColor.withOpacity(0.1),
+                  color: AppConstants.primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -738,7 +1018,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Member list
           if (_isLoadingMembers)
             const Center(
               child: Padding(
@@ -750,15 +1029,15 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
             )
           else
             ListView.separated(
-              shrinkWrap: true, // Important inside SingleChildScrollView
-              physics:
-                  const NeverScrollableScrollPhysics(), // Disable inner scroll
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: group.members.length,
-              separatorBuilder: (_, __) => const Divider(),
+              separatorBuilder: (_, _) => const Divider(),
               itemBuilder: (context, index) {
                 final memberId = group.members[index];
                 final member = _memberCache[memberId];
                 final isGroupOwner = group.createdBy == memberId;
+                final isMemberAdmin = group.adminIds.contains(memberId);
                 final isCurrentUser = memberId == currentUserId;
 
                 return ListTile(
@@ -766,13 +1045,17 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                   leading: CircleAvatar(
                     backgroundColor: isGroupOwner
                         ? AppConstants.primaryColor
-                        : Colors.grey[300],
+                        : isMemberAdmin
+                            ? Colors.orange.shade600
+                            : Colors.grey[300],
                     child: Text(
                       member?.name.isNotEmpty == true
                           ? member!.name[0].toUpperCase()
                           : '?',
                       style: TextStyle(
-                        color: isGroupOwner ? Colors.white : Colors.black87,
+                        color: isGroupOwner || isMemberAdmin
+                            ? Colors.white
+                            : Colors.black87,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -781,7 +1064,9 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                     children: [
                       Text(
                         member?.name ?? 'Unknown User',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       if (isCurrentUser)
                         const Text(
@@ -801,21 +1086,25 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                             fontSize: 12,
                           ),
                         )
-                      : null,
-                  trailing: isOwner && !isGroupOwner
-                      ? IconButton(
-                          icon: const Icon(
-                            Icons.remove_circle_outline,
-                            color: AppConstants.errorColor,
-                          ),
-                          onPressed: () => _showRemoveMemberDialog(
-                            group,
-                            memberId,
-                            member?.name ?? 'this member',
-                          ),
-                          tooltip: 'Remove member',
-                        )
-                      : null,
+                      : isMemberAdmin
+                          ? const Text(
+                              'Admin',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 12,
+                              ),
+                            )
+                          : null,
+                  trailing: _buildMemberTrailing(
+                    group,
+                    memberId,
+                    member,
+                    isGroupOwner,
+                    isMemberAdmin,
+                    isCurrentUser,
+                    isOwner,
+                    isAdmin,
+                  ),
                 );
               },
             ),
@@ -824,21 +1113,100 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     );
   }
 
-  /// Formats date for display.
+  Widget? _buildMemberTrailing(
+    GroupModel group,
+    String memberId,
+    UserModel? member,
+    bool isGroupOwner,
+    bool isMemberAdmin,
+    bool isCurrentUser,
+    bool isOwner,
+    bool isAdmin,
+  ) {
+    if (isCurrentUser || isGroupOwner) return null;
+    final memberName = member?.name ?? 'this member';
+
+    if (isOwner) {
+      return PopupMenuButton<String>(
+        icon: Icon(Icons.more_vert, size: 20, color: Colors.grey[500]),
+        tooltip: 'Member options',
+        onSelected: (value) async {
+          switch (value) {
+            case 'make_admin':
+              await _assignAdmin(group, memberId, memberName);
+              break;
+            case 'remove_admin':
+              await _removeAdminRole(group, memberId, memberName);
+              break;
+            case 'remove':
+              await _showRemoveMemberDialog(group, memberId, memberName);
+              break;
+          }
+        },
+        itemBuilder: (_) {
+          return <PopupMenuEntry<String>>[
+            if (!isMemberAdmin)
+              PopupMenuItem<String>(
+                value: 'make_admin',
+                child: Row(
+                  children: [
+                    const Icon(Icons.admin_panel_settings_outlined,
+                        color: Colors.orange),
+                    const SizedBox(width: 12),
+                    const Text('Make Admin'),
+                  ],
+                ),
+              ),
+            if (isMemberAdmin)
+              PopupMenuItem<String>(
+                value: 'remove_admin',
+                child: Row(
+                  children: [
+                    const Icon(Icons.remove_moderator,
+                        color: Colors.orange),
+                    const SizedBox(width: 12),
+                    const Text('Remove Admin'),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'remove',
+              child: Row(
+                children: [
+                  const Icon(Icons.remove_circle_outline,
+                      color: AppConstants.errorColor),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Remove from Group',
+                    style: TextStyle(color: AppConstants.errorColor),
+                  ),
+                ],
+              ),
+            ),
+          ];
+        },
+      );
+    }
+
+    // Non-owner admin can only remove regular members
+    if (isAdmin && !isMemberAdmin) {
+      return IconButton(
+        icon: const Icon(Icons.remove_circle_outline,
+            color: AppConstants.errorColor),
+        onPressed: () =>
+            _showRemoveMemberDialog(group, memberId, memberName),
+        tooltip: 'Remove member',
+      );
+    }
+
+    return null;
+  }
+
   String _formatDate(DateTime date) {
-    final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }

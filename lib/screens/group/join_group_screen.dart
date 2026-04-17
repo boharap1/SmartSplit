@@ -52,9 +52,18 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize 6 controllers and 6 focus nodes
     _controllers = List.generate(6, (_) => TextEditingController());
     _focusNodes = List.generate(6, (_) => FocusNode());
+    for (int i = 0; i < 6; i++) {
+      final index = i;
+      _focusNodes[index].onKeyEvent = (node, event) {
+        _onKeyEvent(index, event);
+        return KeyEventResult.ignored;
+      };
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNodes[0].requestFocus();
+    });
   }
 
   @override
@@ -213,14 +222,7 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
     });
 
     if (result.group != null) {
-      // Success! Show message and go back
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Joined "${result.group!.groupName}" successfully!'),
-          backgroundColor: AppConstants.successColor,
-        ),
-      );
-      Navigator.pop(context);
+      Navigator.pop(context, result.group!.groupName);
     } else {
       // Error - show message and let user retry
       setState(() {
@@ -429,11 +431,7 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
     return SizedBox(
       width: 48,
       height: 56,
-      child: KeyboardListener(
-        // Listen for backspace key
-        focusNode: FocusNode(),  // Dummy node, actual focus on TextField
-        onKeyEvent: (event) => _onKeyEvent(index, event),
-        child: TextField(
+      child: TextField(
           controller: _controllers[index],
           focusNode: _focusNodes[index],
           textAlign: TextAlign.center,
@@ -480,7 +478,6 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
           ],
           onChanged: (value) => _onDigitChanged(index, value),
         ),
-      ),
     );
   }
 }

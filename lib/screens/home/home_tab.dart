@@ -494,10 +494,7 @@ class _HomeTabState extends State<HomeTab> {
                 Icons.group_add_rounded,
                 'Create\nGroup',
                 const Color(0xFFFF7043),
-                () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const CreateGroupScreen()),
-                ),
+                _handleCreateGroup,
               ),
             ),
             const SizedBox(width: 12),
@@ -506,10 +503,7 @@ class _HomeTabState extends State<HomeTab> {
                 Icons.link_rounded,
                 'Join\nGroup',
                 const Color(0xFF42A5F5),
-                () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const JoinGroupScreen()),
-                ),
+                _handleJoinGroup,
               ),
             ),
           ],
@@ -560,32 +554,29 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  void _handleScanReceipt() {
+  Future<void> _handleScanReceipt() async {
     final groups = context.read<GroupProvider>().groups;
     final userId = context.read<AuthProvider>().firebaseUser?.uid ?? '';
     if (groups.isEmpty) {
       _noGroups();
       return;
     }
-    if (groups.length == 1) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) =>
-              ScanReceiptScreen(group: groups.first, currentUserId: userId),
-        ),
-      );
-      return;
-    }
-    _pickGroup(
-      'Scan receipt for which group?',
-      (g) => Navigator.push(
+
+    Future<void> launchScan(GroupModel g) async {
+      final groupName = await Navigator.push<String>(
         context,
         MaterialPageRoute(
           builder: (_) => ScanReceiptScreen(group: g, currentUserId: userId),
         ),
-      ),
-    );
+      );
+      if (groupName != null && mounted) _showExpenseAddedSnackBar(groupName);
+    }
+
+    if (groups.length == 1) {
+      await launchScan(groups.first);
+      return;
+    }
+    _pickGroup('Scan receipt for which group?', launchScan);
   }
 
   void _handleAddExpense() {
@@ -638,9 +629,9 @@ class _HomeTabState extends State<HomeTab> {
                 ),
                 title: const Text('Scan Receipt'),
                 subtitle: const Text('Use OCR to extract data'),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(ctx);
-                  Navigator.push(
+                  final groupName = await Navigator.push<String>(
                     context,
                     MaterialPageRoute(
                       builder: (_) => ScanReceiptScreen(
@@ -649,6 +640,7 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                     ),
                   );
+                  if (groupName != null && mounted) _showExpenseAddedSnackBar(groupName);
                 },
               ),
               ListTile(
@@ -658,15 +650,16 @@ class _HomeTabState extends State<HomeTab> {
                 ),
                 title: const Text('Manual Entry'),
                 subtitle: const Text('Enter details manually'),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(ctx);
-                  Navigator.push(
+                  final groupName = await Navigator.push<String>(
                     context,
                     MaterialPageRoute(
                       builder: (_) =>
                           AddExpenseScreen(group: group, currentUserId: userId),
                     ),
                   );
+                  if (groupName != null && mounted) _showExpenseAddedSnackBar(groupName);
                 },
               ),
               const SizedBox(height: 10),
@@ -675,6 +668,45 @@ class _HomeTabState extends State<HomeTab> {
         ),
       ),
     );
+  }
+
+  void _showExpenseAddedSnackBar(String groupName) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Expense added to "$groupName" successfully!'),
+        backgroundColor: AppConstants.successColor,
+      ),
+    );
+  }
+
+  Future<void> _handleCreateGroup() async {
+    final groupName = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateGroupScreen()),
+    );
+    if (groupName != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Group "$groupName" created successfully!'),
+          backgroundColor: AppConstants.successColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleJoinGroup() async {
+    final groupName = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const JoinGroupScreen()),
+    );
+    if (groupName != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Joined "$groupName" successfully!'),
+          backgroundColor: AppConstants.successColor,
+        ),
+      );
+    }
   }
 
   void _noGroups() => ScaffoldMessenger.of(context).showSnackBar(

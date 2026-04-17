@@ -82,10 +82,10 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
     }
   }
 
-  void _useScannedData() {
+  Future<void> _useScannedData() async {
     if (_scannedData == null) return;
 
-    Navigator.pushReplacement(
+    final groupName = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (context) => AddExpenseScreen(
@@ -95,6 +95,9 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
         ),
       ),
     );
+    if (groupName != null && mounted) {
+      Navigator.pop(context, groupName);
+    }
   }
 
   void _showImageSourceDialog() {
