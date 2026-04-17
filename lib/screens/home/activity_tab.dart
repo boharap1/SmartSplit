@@ -33,7 +33,7 @@ class _ActivityTabState extends State<ActivityTab>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final groupProvider = context.read<GroupProvider>();
       if (groupProvider.groups.isNotEmpty) {
@@ -196,7 +196,6 @@ class _ActivityTabState extends State<ActivityTab>
           ),
           tabs: const [
             Tab(text: 'Expenses'),
-            Tab(text: 'Summary'),
             Tab(text: 'History'),
             Tab(text: 'Settle Up'),
           ],
@@ -212,7 +211,6 @@ class _ActivityTabState extends State<ActivityTab>
               controller: _tabController,
               children: [
                 _buildExpensesTab(),
-                _buildSummaryTab(),
                 _buildHistoryTab(),
                 _buildSettleUpTab(),
               ],
@@ -331,131 +329,6 @@ class _ActivityTabState extends State<ActivityTab>
                 style: TextStyle(fontSize: 11, color: Colors.grey[400]),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryTab() {
-    final oweGroups = _groupBalances.entries
-        .where((e) => e.value < -0.01)
-        .toList();
-    final owedGroups = _groupBalances.entries
-        .where((e) => e.value > 0.01)
-        .toList();
-    final totalOwe = oweGroups.fold(0.0, (s, e) => s + e.value.abs());
-    final totalOwed = owedGroups.fold(0.0, (s, e) => s + e.value);
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _summaryCard('You Owe', totalOwe, AppConstants.errorColor),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _summaryCard(
-                'You\'re Owed',
-                totalOwed,
-                AppConstants.successColor,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        if (oweGroups.isNotEmpty) ...[
-          Text(
-            'Groups You Owe',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: AppConstants.errorColor,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...oweGroups.map(
-            (e) => _balanceRow(
-              _groupNames[e.key] ?? '',
-              e.value.abs(),
-              AppConstants.errorColor,
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
-        if (owedGroups.isNotEmpty) ...[
-          Text(
-            'Groups That Owe You',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: AppConstants.successColor,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...owedGroups.map(
-            (e) => _balanceRow(
-              _groupNames[e.key] ?? '',
-              e.value,
-              AppConstants.successColor,
-            ),
-          ),
-        ],
-        if (oweGroups.isEmpty && owedGroups.isEmpty)
-          _emptyInline(Icons.check_circle_outline, 'All settled up!'),
-      ],
-    );
-  }
-
-  Widget _summaryCard(String label, double amount, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          Text(label, style: TextStyle(fontSize: 13, color: color)),
-          const SizedBox(height: 6),
-          Text(
-            '£${amount.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _balanceRow(String name, double amount, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            ),
-          ),
-          Text(
-            '£${amount.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
           ),
         ],
       ),

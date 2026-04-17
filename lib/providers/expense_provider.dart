@@ -79,13 +79,16 @@ class ExpenseProvider extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    final splitAmount = totalAmount / participantIds.length;
-    final splits = participantIds
-        .map((userId) => ExpenseSplit(
-              userId: userId,
-              amount: double.parse(splitAmount.toStringAsFixed(2)),
-            ))
-        .toList();
+    final int totalPence = (totalAmount * 100).round();
+    final int count = participantIds.length;
+    final int basePence = totalPence ~/ count;
+    final int extraPence = totalPence - basePence * count;
+
+    final splits = <ExpenseSplit>[];
+    for (int i = 0; i < count; i++) {
+      final int pence = i < extraPence ? basePence + 1 : basePence;
+      splits.add(ExpenseSplit(userId: participantIds[i], amount: pence / 100.0));
+    }
 
     final result = await _expenseService.createExpense(
       groupId: groupId,

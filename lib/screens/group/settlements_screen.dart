@@ -95,12 +95,8 @@ class _SettlementsScreenState extends State<SettlementsScreen>
       final result = await _settlementService.calculateOptimizedSettlements(
         widget.group.groupId,
       );
-      print('Settlement result: ${result.settlements.length} settlements');
-      print('Net balances: ${result.netBalances}');
-      print('Error: ${result.error}');
       setState(() => _settlementResult = result);
     } catch (e) {
-      print('Error loading settlement result: $e');
       setState(() {
         _settlementResult = SettlementResult(
           netBalances: {},
@@ -109,7 +105,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
           optimizedTransactionCount: 0,
           totalDebt: 0,
           isFullySettleable: false,
-          error: 'Error: ${e.toString()}',
+          error: 'Failed to load settlements.',
         );
       });
     }
@@ -127,6 +123,28 @@ class _SettlementsScreenState extends State<SettlementsScreen>
 
   String _getMemberName(String userId) {
     return _memberCache[userId]?.name ?? 'Unknown';
+  }
+
+  Future<void> _showPaymentRequestSheet(OptimizedSettlement settlement) async {
+    final payerName = _getMemberName(settlement.fromUserId);
+    final myBankDetails = _bankDetailsCache[widget.currentUserId];
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => _PaymentRequestSheet(
+        settlement: settlement,
+        payerName: payerName,
+        myBankDetails: myBankDetails,
+        onAddBankDetails: () {
+          Navigator.pop(context);
+          _navigateToBankDetails();
+        },
+      ),
+    );
   }
 
   Future<void> _showSettlementConfirmation(
@@ -177,18 +195,42 @@ class _SettlementsScreenState extends State<SettlementsScreen>
       note: note,
     );
 
-    setState(() => _isSettling = false);
-
     if (mounted) {
       if (result.settlement != null) {
+        setState(() {
+          _isSettling = false;
+          if (_settlementResult != null) {
+            final updated = _settlementResult!.settlements
+                .where((s) => !(s.fromUserId == settlement.fromUserId &&
+                    s.toUserId == settlement.toUserId))
+                .toList();
+            _settlementResult = SettlementResult(
+              netBalances: _settlementResult!.netBalances,
+              settlements: updated,
+              originalTransactionCount:
+                  _settlementResult!.originalTransactionCount,
+              optimizedTransactionCount: updated.length,
+              totalDebt: _settlementResult!.totalDebt,
+              isFullySettleable: _settlementResult!.isFullySettleable,
+            );
+          }
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Settlement recorded successfully!'),
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Payment recorded successfully!'),
+              ],
+            ),
             backgroundColor: AppConstants.successColor,
+            duration: Duration(seconds: 3),
           ),
         );
-        _loadSettlementResult();
+        _loadSettlementResult(); // background reload for accurate balances
       } else {
+        setState(() => _isSettling = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result.error ?? 'Failed to record settlement'),
@@ -367,9 +409,33 @@ class _SettlementsScreenState extends State<SettlementsScreen>
       );
     }
 
+    final myBalance = result.netBalances[widget.currentUserId] ?? 0.0;
+
     return ListView(
       padding: const EdgeInsets.all(AppConstants.defaultPadding),
       children: [
+        // Personal balance cards
+        Row(
+          children: [
+            Expanded(
+              child: _buildPersonalCard(
+                'You Owe',
+                myBalance < -0.01 ? myBalance.abs() : 0.0,
+                AppConstants.errorColor,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildPersonalCard(
+                'You\'re Owed',
+                myBalance > 0.01 ? myBalance : 0.0,
+                AppConstants.successColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+
         // Algorithm stats card
         Container(
           padding: const EdgeInsets.all(AppConstants.defaultPadding),
@@ -464,6 +530,30 @@ class _SettlementsScreenState extends State<SettlementsScreen>
           );
         }),
       ],
+    );
+  }
+
+  Widget _buildPersonalCard(String label, double amount, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(fontSize: 13, color: color)),
+          const SizedBox(height: 6),
+          Text(
+            '£${amount.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -566,7 +656,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
         ),
         const SizedBox(height: 4),
         Text(
-          'Tap a payment to mark it as complete',
+          'Your payments are highlighted in blue',
           style: TextStyle(color: Colors.grey[600], fontSize: 14),
         ),
         const SizedBox(height: 16),
@@ -583,6 +673,13 @@ class _SettlementsScreenState extends State<SettlementsScreen>
     final isCurrentUserReceiver = settlement.toUserId == widget.currentUserId;
     final toUserBankDetails = _bankDetailsCache[settlement.toUserId];
 
+    VoidCallback? cardTap;
+    if (isCurrentUserPayer && !_isSettling) {
+      cardTap = () => _showSettlementConfirmation(settlement);
+    } else if (isCurrentUserReceiver) {
+      cardTap = () => _showPaymentRequestSheet(settlement);
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
@@ -594,9 +691,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
             : BorderSide.none,
       ),
       child: InkWell(
-        onTap: _isSettling
-            ? null
-            : () => _showSettlementConfirmation(settlement),
+        onTap: cardTap,
         borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         child: Padding(
           padding: const EdgeInsets.all(AppConstants.defaultPadding),
@@ -723,24 +818,36 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                 ),
               ],
 
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSettling
-                      ? null
-                      : () => _showSettlementConfirmation(settlement),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isCurrentUserPayer
-                        ? AppConstants.primaryColor
-                        : AppConstants.successColor,
-                    foregroundColor: Colors.white,
+              if (isCurrentUserPayer || isCurrentUserReceiver) ...[
+                const SizedBox(height: 12),
+                if (isCurrentUserPayer)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isSettling
+                          ? null
+                          : () => _showSettlementConfirmation(settlement),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppConstants.primaryColor,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('I Paid This'),
+                    ),
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showPaymentRequestSheet(settlement),
+                      icon: const Icon(Icons.send, size: 16),
+                      label: const Text('Request Payment'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppConstants.successColor,
+                        side: const BorderSide(color: AppConstants.successColor),
+                      ),
+                    ),
                   ),
-                  child: Text(
-                    isCurrentUserPayer ? 'I Paid This' : 'Mark as Paid',
-                  ),
-                ),
-              ),
+              ],
             ],
           ),
         ),
@@ -783,6 +890,8 @@ class _SettlementsScreenState extends State<SettlementsScreen>
   Widget _buildHistoryCard(SettlementRecord record) {
     final fromName = _getMemberName(record.fromUserId);
     final toName = _getMemberName(record.toUserId);
+    final canUndo = record.fromUserId == widget.currentUserId ||
+        record.toUserId == widget.currentUserId;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -837,16 +946,18 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
             ],
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _deleteSettlement(record),
-                icon: const Icon(Icons.delete_outline, size: 18),
-                label: const Text('Undo'),
-                style: TextButton.styleFrom(foregroundColor: Colors.grey),
+            if (canUndo) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _deleteSettlement(record),
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Undo'),
+                  style: TextButton.styleFrom(foregroundColor: Colors.grey),
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -1137,6 +1248,201 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
           setState(() => _paymentMethod = value);
         }
       },
+    );
+  }
+}
+
+/// Bottom sheet shown to the receiver of a payment so they can share their
+/// bank details or copy a ready-made payment request message for the payer.
+class _PaymentRequestSheet extends StatelessWidget {
+  final OptimizedSettlement settlement;
+  final String payerName;
+  final BankDetails? myBankDetails;
+  final VoidCallback onAddBankDetails;
+
+  const _PaymentRequestSheet({
+    required this.settlement,
+    required this.payerName,
+    required this.myBankDetails,
+    required this.onAddBankDetails,
+  });
+
+  void _copyRequest(BuildContext context) {
+    final bank = myBankDetails;
+    final String message;
+
+    if (bank != null && bank.isComplete) {
+      message =
+          'Hi $payerName, could you please send me '
+          '£${settlement.amount.toStringAsFixed(2)}?\n\n'
+          'Account holder: ${bank.accountHolderName}\n'
+          'Bank: ${bank.bankName}\n'
+          'Sort code: ${bank.formattedSortCode}\n'
+          'Account number: ${bank.accountNumber}';
+    } else {
+      message =
+          'Hi $payerName, could you please send me '
+          '£${settlement.amount.toStringAsFixed(2)}? Thanks!';
+    }
+
+    Clipboard.setData(ClipboardData(text: message));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Payment request copied to clipboard'),
+        backgroundColor: AppConstants.successColor,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bank = myBankDetails;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(AppConstants.defaultPadding),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Request Payment',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+
+              // Summary
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppConstants.successColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      '$payerName owes you',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '£${settlement.amount.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: AppConstants.successColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Bank details or prompt to add them
+              if (bank != null && bank.isComplete) ...[
+                const Text(
+                  'Your payment details',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius:
+                        BorderRadius.circular(AppConstants.borderRadius),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _row('Name', bank.accountHolderName),
+                      _row('Bank', bank.bankName),
+                      _row('Sort code', bank.formattedSortCode),
+                      _row('Account', bank.accountNumber),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius:
+                        BorderRadius.circular(AppConstants.borderRadius),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: Colors.orange),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Add your bank details so $payerName knows where to send the money.',
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: onAddBankDetails,
+                  child: const Text('Add Bank Details'),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              ElevatedButton.icon(
+                onPressed: () => _copyRequest(context),
+                icon: const Icon(Icons.copy, size: 18),
+                label: const Text('Copy Payment Request'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppConstants.successColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.grey[600])),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+        ],
+      ),
     );
   }
 }
