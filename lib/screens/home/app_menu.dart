@@ -1,0 +1,733 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/user_model.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/settlement_service.dart';
+import '../../utils/constants.dart';
+import '../profile/bank_details_screen.dart';
+import '../profile/edit_profile_screen.dart';
+import '../profile/personal_information_screen.dart';
+import '../profile/verify_account_screen.dart';
+
+/// Opens the full-height slide-in app menu from the left edge.
+void showAppMenu(BuildContext context) {
+  showGeneralDialog(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'AppMenu',
+    barrierColor: Colors.black54,
+    transitionDuration: const Duration(milliseconds: 270),
+    pageBuilder: (_, _, _) => const SizedBox.shrink(),
+    transitionBuilder: (_, animation, _, _) {
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(-1, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: _AppMenuPanel(parentContext: context),
+        ),
+      );
+    },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Menu panel widget
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AppMenuPanel extends StatefulWidget {
+  final BuildContext parentContext;
+  const _AppMenuPanel({required this.parentContext});
+
+  @override
+  State<_AppMenuPanel> createState() => _AppMenuPanelState();
+}
+
+class _AppMenuPanelState extends State<_AppMenuPanel> {
+  bool _profileExpanded  = false;
+  bool _settingsExpanded = false;
+  bool _privacyExpanded  = false;
+  bool _darkMode         = false;
+  bool _notificationsOn  = true;
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+
+  void _close() => Navigator.of(context).pop();
+
+  /// Navigate to [screen] while cleanly closing the menu first.
+  void _navigateTo(Widget screen) {
+    final nav = Navigator.of(widget.parentContext);
+    _close();
+    nav.push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  /// Show a "coming soon" snackbar after closing the menu.
+  void _soon(String feature) {
+    final sm = ScaffoldMessenger.of(widget.parentContext);
+    _close();
+    sm.showSnackBar(SnackBar(
+      content: Text('$feature — coming soon'),
+      backgroundColor: AppConstants.primaryColor,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
+  Future<void> _goToBankDetails() async {
+    final userId =
+        widget.parentContext.read<AuthProvider>().firebaseUser?.uid;
+    if (userId == null) return;
+    final nav = Navigator.of(widget.parentContext);
+    _close();
+    final details = await SettlementService().getBankDetails(userId);
+    nav.push(MaterialPageRoute(
+      builder: (_) => BankDetailsScreen(userId: userId, existingDetails: details),
+    ));
+  }
+
+  void _showAboutDialog() {
+    _close();
+    showDialog(
+      context: widget.parentContext,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.receipt_long_rounded,
+                size: 44,
+                color: AppConstants.primaryColor,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'SmartSplit',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Version 1.0.0',
+              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Split expenses fairly with friends,\nfamily, and roommates.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[700], fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmLogout() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.logout_rounded, color: AppConstants.errorColor, size: 22),
+            SizedBox(width: 10),
+            Text('Logout'),
+          ],
+        ),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final auth = widget.parentContext.read<AuthProvider>();
+              Navigator.pop(ctx);
+              _close();
+              await auth.signOut();
+            },
+            style: TextButton.styleFrom(foregroundColor: AppConstants.errorColor),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAccount() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever_rounded, color: AppConstants.errorColor, size: 22),
+            SizedBox(width: 10),
+            Text('Delete Account'),
+          ],
+        ),
+        content: const Text(
+          'This is permanent and cannot be undone. All your data will be erased.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _soon('Delete Account');
+            },
+            style: TextButton.styleFrom(foregroundColor: AppConstants.errorColor),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── build ──────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<AuthProvider>().user;
+    final width = MediaQuery.of(context).size.width * 0.82;
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: width,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topRight:    Radius.circular(24),
+            bottomRight: Radius.circular(24),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 24,
+              offset: Offset(6, 0),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            _buildHeader(user),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                children: [
+                  // ── Profile ─────────────────────────────────────────────
+                  _buildExpandable(
+                    icon: Icons.person_outline_rounded,
+                    iconColor: AppConstants.primaryColor,
+                    label: 'Profile',
+                    expanded: _profileExpanded,
+                    onToggle: () =>
+                        setState(() => _profileExpanded = !_profileExpanded),
+                    children: [
+                      _subTile(
+                        Icons.edit_outlined,
+                        'Edit Profile',
+                        () => _navigateTo(const EditProfileScreen()),
+                      ),
+                      _subTile(
+                        Icons.badge_outlined,
+                        'Personal Information',
+                        () => _navigateTo(const PersonalInformationScreen()),
+                      ),
+                      _subTile(
+                        Icons.verified_user_outlined,
+                        'Verify Account',
+                        () => _navigateTo(const VerifyAccountScreen()),
+                      ),
+                    ],
+                  ),
+
+                  // ── Settings ─────────────────────────────────────────────
+                  _buildExpandable(
+                    icon: Icons.tune_rounded,
+                    iconColor: const Color(0xFFFF7043),
+                    label: 'Settings',
+                    expanded: _settingsExpanded,
+                    onToggle: () =>
+                        setState(() => _settingsExpanded = !_settingsExpanded),
+                    children: [
+                      _subTile(
+                        Icons.language_rounded,
+                        'Language',
+                        () => _soon('Language'),
+                      ),
+                      _subTile(
+                        Icons.schedule_rounded,
+                        'Time Zone',
+                        () => _soon('Time Zone'),
+                      ),
+                      _subTile(
+                        Icons.attach_money_rounded,
+                        'Currency',
+                        () => _soon('Currency'),
+                      ),
+                      // Privacy nested
+                      _buildPrivacySection(),
+                    ],
+                  ),
+
+                  _divider(),
+
+                  // ── Bank Details ──────────────────────────────────────────
+                  _tile(
+                    icon: Icons.account_balance_outlined,
+                    iconColor: const Color(0xFF42A5F5),
+                    label: 'Bank Details',
+                    onTap: _goToBankDetails,
+                  ),
+
+                  // ── Dark Mode toggle ──────────────────────────────────────
+                  _toggleTile(
+                    icon: Icons.dark_mode_outlined,
+                    iconColor: const Color(0xFF5C6BC0),
+                    label: 'Dark Mode',
+                    value: _darkMode,
+                    onChanged: (v) => setState(() => _darkMode = v),
+                  ),
+
+                  // ── Notifications toggle ──────────────────────────────────
+                  _toggleTile(
+                    icon: Icons.notifications_outlined,
+                    iconColor: const Color(0xFFAB47BC),
+                    label: 'Notifications',
+                    value: _notificationsOn,
+                    onChanged: (v) => setState(() => _notificationsOn = v),
+                  ),
+
+                  _divider(),
+
+                  // ── Rate SmartSplit ───────────────────────────────────────
+                  _tile(
+                    icon: Icons.star_outline_rounded,
+                    iconColor: const Color(0xFFFFB300),
+                    label: 'Rate SmartSplit',
+                    onTap: () => _soon('Rate SmartSplit'),
+                  ),
+
+                  // ── Contact Us ────────────────────────────────────────────
+                  _tile(
+                    icon: Icons.mail_outline_rounded,
+                    iconColor: const Color(0xFF26A69A),
+                    label: 'Contact Us',
+                    onTap: () => _soon('Contact Us'),
+                  ),
+
+                  // ── About ────────────────────────────────────────────────
+                  _tile(
+                    icon: Icons.info_outline_rounded,
+                    iconColor: const Color(0xFF78909C),
+                    label: 'About',
+                    onTap: _showAboutDialog,
+                  ),
+
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+
+            // ── Logout (fixed bottom) ────────────────────────────────────
+            const Divider(height: 1, thickness: 1),
+            _buildLogout(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Header with user avatar ────────────────────────────────────────────────
+
+  Widget _buildHeader(UserModel? user) {
+    final words = (user?.name.trim() ?? '').split(' ').where((w) => w.isNotEmpty).toList();
+    final initials = words.length >= 2
+        ? '${words[0][0]}${words[1][0]}'.toUpperCase()
+        : words.isNotEmpty
+            ? words[0][0].toUpperCase()
+            : '?';
+
+    return Container(
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 10,
+        left: 20,
+        right: 16,
+        bottom: 22,
+      ),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF00796B), AppConstants.primaryColor],
+        ),
+        borderRadius: BorderRadius.only(topRight: Radius.circular(24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.topRight,
+            child: GestureDetector(
+              onTap: _close,
+              child: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+            ),
+          ),
+          const SizedBox(height: 10),
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: Colors.white.withValues(alpha: 0.25),
+            backgroundImage: (user?.hasProfilePicture == true)
+                ? NetworkImage(user!.profilePicture!)
+                : null,
+            child: (user?.hasProfilePicture == true)
+                ? null
+                : Text(
+                    initials,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            user?.name ?? 'User',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            user?.email ?? '',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Expandable section ────────────────────────────────────────────────────
+
+  Widget _buildExpandable({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required bool expanded,
+    required VoidCallback onToggle,
+    required List<Widget> children,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            child: Row(
+              children: [
+                _iconBox(icon, iconColor),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1A1A2E),
+                    ),
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: expanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: Colors.grey[400],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          ),
+          crossFadeState:
+              expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 200),
+        ),
+      ],
+    );
+  }
+
+  // Sub-item under an expandable section (one indent level)
+  Widget _subTile(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 52, right: 16, top: 10, bottom: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 17, color: Colors.grey[600]),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Privacy nested section ────────────────────────────────────────────────
+
+  Widget _buildPrivacySection() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _privacyExpanded = !_privacyExpanded),
+          child: Padding(
+            padding: const EdgeInsets.only(
+                left: 52, right: 16, top: 10, bottom: 10),
+            child: Row(
+              children: [
+                Icon(Icons.security_outlined, size: 17, color: Colors.grey[600]),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Privacy',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: _privacyExpanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: Colors.grey[400],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: const SizedBox.shrink(),
+          secondChild: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _privacySubTile(
+                Icons.lock_outline_rounded,
+                'Password & Security',
+                () => _soon('Password & Security'),
+              ),
+              _privacySubTile(
+                Icons.devices_outlined,
+                'Logout from All Other Devices',
+                () => _soon('Logout from All Other Devices'),
+              ),
+              _privacySubTile(
+                Icons.delete_outline_rounded,
+                'Delete Account',
+                _confirmDeleteAccount,
+                isDestructive: true,
+              ),
+            ],
+          ),
+          crossFadeState: _privacyExpanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 200),
+        ),
+      ],
+    );
+  }
+
+  Widget _privacySubTile(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool isDestructive = false,
+  }) {
+    final color = isDestructive ? AppConstants.errorColor : Colors.grey[600]!;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(
+            left: 72, right: 16, top: 10, bottom: 10),
+        child: Row(
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: isDestructive ? AppConstants.errorColor : Colors.grey[800],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Regular tile ──────────────────────────────────────────────────────────
+
+  Widget _tile({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        child: Row(
+          children: [
+            _iconBox(icon, iconColor),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF1A1A2E),
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[300]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Toggle tile ───────────────────────────────────────────────────────────
+
+  Widget _toggleTile({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          _iconBox(icon, iconColor),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF1A1A2E),
+              ),
+            ),
+          ),
+          Transform.scale(
+            scale: 0.82,
+            child: Switch(
+              value: value,
+              onChanged: onChanged,
+              activeTrackColor: AppConstants.primaryColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Logout row ────────────────────────────────────────────────────────────
+
+  Widget _buildLogout() {
+    return InkWell(
+      onTap: _confirmLogout,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 14,
+          bottom: MediaQuery.of(context).padding.bottom + 14,
+        ),
+        child: Row(
+          children: [
+            _iconBox(
+              Icons.logout_rounded,
+              AppConstants.errorColor,
+            ),
+            const SizedBox(width: 14),
+            const Text(
+              'Logout',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppConstants.errorColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Shared helpers ────────────────────────────────────────────────────────
+
+  Widget _iconBox(IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Icon(icon, size: 18, color: color),
+    );
+  }
+
+  Widget _divider() => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Divider(color: Colors.grey[150], height: 1),
+      );
+}

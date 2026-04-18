@@ -6,15 +6,13 @@ import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/group_model.dart';
 import '../../models/expense_model.dart';
-import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
 import '../group/group_details_screen.dart';
 import '../group/create_group_screen.dart';
 import '../group/join_group_screen.dart';
 import '../group/scan_receipt_screen.dart';
 import '../group/add_expense_screen.dart';
-import '../profile/profile_screen.dart';
-import '../profile/bank_details_screen.dart';
+import 'app_menu.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -134,65 +132,14 @@ class _HomeTabState extends State<HomeTab> {
               padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
               child: Row(
                 children: [
-                  // 3-dot menu (left)
-                  PopupMenuButton<String>(
+                  // App menu (left)
+                  IconButton(
+                    onPressed: () => showAppMenu(context),
                     icon: const Icon(
-                      Icons.more_vert,
+                      Icons.menu_rounded,
                       color: Colors.white,
                       size: 26,
                     ),
-                    color: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    offset: const Offset(0, 48),
-                    onSelected: _handleMenuAction,
-                    itemBuilder: (_) => [
-                      _popupItem(
-                        'profile',
-                        Icons.person_outline,
-                        'Profile',
-                        trailing: 'EDIT',
-                      ),
-                      _popupItem(
-                        'settings',
-                        Icons.settings_outlined,
-                        'Settings',
-                      ),
-                      _popupItem('qr_code', Icons.qr_code_rounded, 'QR Code'),
-                      _popupItem(
-                        'bank',
-                        Icons.account_balance_outlined,
-                        'Bank Details',
-                      ),
-                      const PopupMenuDivider(),
-                      _popupItem(
-                        'theme',
-                        Icons.dark_mode_outlined,
-                        'Dark Mode',
-                      ),
-                      _popupItem(
-                        'notifications',
-                        Icons.notifications_outlined,
-                        'Notifications',
-                      ),
-                      const PopupMenuDivider(),
-                      _popupItem(
-                        'feedback',
-                        Icons.feedback_outlined,
-                        'Send Feedback',
-                      ),
-                      _popupItem(
-                        'rate',
-                        Icons.star_outline_rounded,
-                        'Rate SmartSplit',
-                      ),
-                      _popupItem(
-                        'contact',
-                        Icons.mail_outline_rounded,
-                        'Contact Us',
-                      ),
-                    ],
                   ),
                   // Greeting (center)
                   Expanded(
@@ -232,122 +179,6 @@ class _HomeTabState extends State<HomeTab> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  PopupMenuItem<String> _popupItem(
-    String value,
-    IconData icon,
-    String label, {
-    String? trailing,
-  }) {
-    return PopupMenuItem<String>(
-      value: value,
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: Colors.grey[700]),
-          const SizedBox(width: 12),
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
-          if (trailing != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppConstants.primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                trailing,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: AppConstants.primaryColor,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  void _handleMenuAction(String action) {
-    final userId = context.read<AuthProvider>().firebaseUser?.uid ?? '';
-    switch (action) {
-      case 'profile':
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ProfileScreen()),
-        );
-      case 'bank':
-        _navigateToBankDetails(userId);
-      case 'qr_code':
-        _showQRCode();
-      default:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$action coming soon'),
-            backgroundColor: AppConstants.primaryColor,
-          ),
-        );
-    }
-  }
-
-  void _showQRCode() {
-    final user = context.read<AuthProvider>().user;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('My QR Code', textAlign: TextAlign.center),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.qr_code_2_rounded,
-                  size: 100,
-                  color: Colors.grey[400],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              user?.name ?? '',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              user?.email ?? '',
-              style: TextStyle(color: Colors.grey[500], fontSize: 13),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _navigateToBankDetails(String userId) async {
-    if (userId.isEmpty) return;
-    final details = await SettlementService().getBankDetails(userId);
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            BankDetailsScreen(userId: userId, existingDetails: details),
       ),
     );
   }

@@ -154,6 +154,51 @@ class AuthProvider extends ChangeNotifier {
     return isEmailVerified;
   }
 
+  // Update Profile — pass null to leave a field unchanged, '' to clear it
+  Future<bool> updateProfile({
+    String? name,
+    String? phoneNumber,
+    String? profilePicture,
+    String? dob,
+    String? gender,
+  }) async {
+    final uid = firebaseUser?.uid;
+    if (uid == null) return false;
+
+    final result = await _authService.updateProfile(
+      uid: uid,
+      name: name,
+      phoneNumber: phoneNumber,
+      profilePicture: profilePicture,
+      dob: dob,
+      gender: gender,
+    );
+
+    if (result.success) {
+      _user = _user?.copyWith(
+        name: name,
+        phoneNumber: phoneNumber,
+        profilePicture: profilePicture,
+        dob: dob,
+        gender: gender,
+      );
+      _errorMessage = null;
+    } else {
+      _errorMessage = result.error;
+    }
+    notifyListeners();
+    return result.success;
+  }
+
+  // Re-fetch latest profile data from Firestore
+  Future<void> refreshProfile() async {
+    final fresh = await _authService.refreshUserData();
+    if (fresh != null) {
+      _user = fresh;
+      notifyListeners();
+    }
+  }
+
   // Clear Error
   void clearError() {
     _errorMessage = null;

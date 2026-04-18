@@ -138,6 +138,46 @@ class AuthService {
     }
   }
 
+  /// Re-fetches the current user's Firestore document.
+  Future<UserModel?> refreshUserData() async {
+    final uid = currentUser?.uid;
+    if (uid == null) return null;
+    return getUserData(uid);
+  }
+
+  /// Updates only the provided fields in Firestore and Firebase Auth display name.
+  /// Pass null for any field you do not want to change.
+  /// Pass an empty string ('') to explicitly clear an optional field.
+  Future<({bool success, String? error})> updateProfile({
+    required String uid,
+    String? name,
+    String? phoneNumber,
+    String? profilePicture,
+    String? dob,
+    String? gender,
+  }) async {
+    try {
+      final updates = <String, dynamic>{};
+      if (name != null && name.isNotEmpty) updates['name'] = name;
+      if (phoneNumber != null)    updates['phoneNumber']    = phoneNumber;
+      if (profilePicture != null) updates['profilePicture'] = profilePicture;
+      if (dob != null)            updates['dob']            = dob;
+      if (gender != null)         updates['gender']         = gender;
+
+      if (updates.isEmpty) return (success: true, error: null);
+
+      await _firestore.collection('users').doc(uid).update(updates);
+
+      if (name != null && name.isNotEmpty) {
+        await currentUser?.updateDisplayName(name);
+      }
+
+      return (success: true, error: null);
+    } catch (e) {
+      return (success: false, error: 'Failed to update profile. Please try again.');
+    }
+  }
+
   String _getErrorMessage(String code) {
     switch (code) {
       case 'email-already-in-use':

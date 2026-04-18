@@ -6,6 +6,8 @@ import '../../models/bank_details_model.dart';
 import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
 import 'bank_details_screen.dart';
+import 'edit_profile_screen.dart';
+import 'personal_information_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -18,18 +20,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final SettlementService _settlementService = SettlementService();
   BankDetails? _bankDetails;
   bool _isLoadingBank = true;
-  final _nameController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBankDetails());
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadBankDetails() async {
@@ -217,8 +212,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Icons.person_outline,
                       AppConstants.primaryColor,
                       'Edit Profile',
-                      'Update your name',
-                      () => _showEditName(),
+                      'Update name & photo',
+                      _navigateToEditProfile,
+                    ),
+                    _div(),
+                    _menuItem(
+                      Icons.badge_outlined,
+                      const Color(0xFF26A69A),
+                      'Personal Information',
+                      'Phone, DOB, gender',
+                      () => Navigator.push(context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const PersonalInformationScreen())),
                     ),
                     _div(),
                     _menuItem(
@@ -420,40 +426,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     child: Divider(height: 1, color: Colors.grey[100]),
   );
 
-  void _showEditName() {
-    _nameController.text = context.read<AuthProvider>().user?.name ?? '';
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Edit Name'),
-        content: TextField(
-          controller: _nameController,
-          textCapitalization: TextCapitalization.words,
-          decoration: InputDecoration(
-            labelText: 'Display Name',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Profile update coming soon'),
-                  backgroundColor: AppConstants.primaryColor,
-                ),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+  Future<void> _navigateToEditProfile() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const EditProfileScreen()),
     );
   }
 }
