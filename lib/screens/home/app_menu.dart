@@ -8,6 +8,10 @@ import '../profile/bank_details_screen.dart';
 import '../profile/edit_profile_screen.dart';
 import '../profile/personal_information_screen.dart';
 import '../profile/verify_account_screen.dart';
+import '../settings/language_screen.dart';
+import '../settings/time_zone_screen.dart';
+import '../settings/currency_screen.dart';
+import '../settings/password_security_screen.dart';
 
 /// Opens the full-height slide-in app menu from the left edge.
 void showAppMenu(BuildContext context) {
@@ -169,20 +173,21 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
     );
   }
 
-  void _confirmDeleteAccount() {
+  void _confirmLogoutAllDevices() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.delete_forever_rounded, color: AppConstants.errorColor, size: 22),
+            Icon(Icons.devices_outlined, color: AppConstants.primaryColor, size: 22),
             SizedBox(width: 10),
-            Text('Delete Account'),
+            Text('Logout All Devices'),
           ],
         ),
         content: const Text(
-          'This is permanent and cannot be undone. All your data will be erased.',
+          'All other active sessions will be signed out the next time they open the app. '
+          'Your current session will remain active.',
         ),
         actions: [
           TextButton(
@@ -190,14 +195,110 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              final auth = widget.parentContext.read<AuthProvider>();
+              final sm   = ScaffoldMessenger.of(widget.parentContext);
               Navigator.pop(ctx);
-              _soon('Delete Account');
+              _close();
+              final success = await auth.logoutAllDevices();
+              sm.showSnackBar(SnackBar(
+                content: Text(success
+                    ? 'All other devices will be signed out.'
+                    : auth.errorMessage ?? 'Failed to logout other devices.'),
+                backgroundColor:
+                    success ? AppConstants.successColor : AppConstants.errorColor,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ));
             },
-            style: TextButton.styleFrom(foregroundColor: AppConstants.errorColor),
-            child: const Text('Delete'),
+            style: TextButton.styleFrom(foregroundColor: AppConstants.primaryColor),
+            child: const Text('Logout All'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _confirmDeleteAccount() {
+    final passwordCtrl = TextEditingController();
+    bool obscure = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.delete_forever_rounded,
+                  color: AppConstants.errorColor, size: 22),
+              SizedBox(width: 10),
+              Text('Delete Account'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This is permanent and cannot be undone. '
+                'All your data will be permanently erased.',
+                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller:  passwordCtrl,
+                obscureText: obscure,
+                decoration: InputDecoration(
+                  labelText:   'Enter your password to confirm',
+                  border:      OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setS(() => obscure = !obscure),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                passwordCtrl.dispose();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final password = passwordCtrl.text.trim();
+                if (password.isEmpty) return;
+                final auth = widget.parentContext.read<AuthProvider>();
+                final sm   = ScaffoldMessenger.of(widget.parentContext);
+                passwordCtrl.dispose();
+                Navigator.pop(ctx);
+                _close();
+                final success = await auth.deleteAccount(password: password);
+                if (!success) {
+                  sm.showSnackBar(SnackBar(
+                    content: Text(
+                        auth.errorMessage ?? 'Failed to delete account.'),
+                    backgroundColor: AppConstants.errorColor,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ));
+                }
+              },
+              style: TextButton.styleFrom(
+                  foregroundColor: AppConstants.errorColor),
+              child: const Text('Delete Forever'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -274,17 +375,17 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                       _subTile(
                         Icons.language_rounded,
                         'Language',
-                        () => _soon('Language'),
+                        () => _navigateTo(const LanguageScreen()),
                       ),
                       _subTile(
                         Icons.schedule_rounded,
                         'Time Zone',
-                        () => _soon('Time Zone'),
+                        () => _navigateTo(const TimeZoneScreen()),
                       ),
                       _subTile(
                         Icons.attach_money_rounded,
                         'Currency',
-                        () => _soon('Currency'),
+                        () => _navigateTo(const CurrencyScreen()),
                       ),
                       // Privacy nested
                       _buildPrivacySection(),
@@ -554,12 +655,12 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
               _privacySubTile(
                 Icons.lock_outline_rounded,
                 'Password & Security',
-                () => _soon('Password & Security'),
+                () => _navigateTo(const PasswordSecurityScreen()),
               ),
               _privacySubTile(
                 Icons.devices_outlined,
                 'Logout from All Other Devices',
-                () => _soon('Logout from All Other Devices'),
+                _confirmLogoutAllDevices,
               ),
               _privacySubTile(
                 Icons.delete_outline_rounded,

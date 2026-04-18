@@ -9,6 +9,7 @@ import '../../services/receipt_scanner_service.dart';
 import '../../utils/constants.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
+import '../../providers/settings_provider.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final GroupModel group;
@@ -218,6 +219,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = context.watch<SettingsProvider>().currencySymbol;
     return Scaffold(
       backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
@@ -290,7 +292,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
                     CustomTextField(
                       controller: _amountController,
-                      label: 'Amount (£)',
+                      label: 'Amount ($cs)',
                       hint: '0.00',
                       prefixIcon: Icons.currency_pound,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -508,7 +510,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    '£${perPerson.toStringAsFixed(2)} per person (${_selectedParticipants.length} people)',
+                                    '$cs${perPerson.toStringAsFixed(2)} per person (${_selectedParticipants.length} people)',
                                     style: const TextStyle(
                                       color: AppConstants.primaryColor,
                                       fontWeight: FontWeight.w500,

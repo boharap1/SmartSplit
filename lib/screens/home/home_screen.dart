@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/group_model.dart';
 import '../../utils/constants.dart';
+import '../../providers/settings_provider.dart';
 import '../group/create_group_screen.dart';
 import '../group/join_group_screen.dart';
 import '../group/group_details_screen.dart';
@@ -400,7 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '£0.00',
+                    '${context.watch<SettingsProvider>().currencySymbol}0.00',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

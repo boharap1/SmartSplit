@@ -10,6 +10,7 @@ import '../../models/user_model.dart';
 import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
 import '../../widgets/custom_text_field.dart';
+import '../../providers/settings_provider.dart';
 
 class GroupDetailsScreen extends StatefulWidget {
   final String groupId;
@@ -233,6 +234,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     required String action,
     required List<MapEntry<String, double>> unsettled,
   }) {
+    final cs = context.read<SettingsProvider>().currencySymbol;
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -255,7 +257,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
           children: [
             Text(
               'The following members have outstanding balances. '
-              'All balances must reach £0.00 before you can $action this group:',
+              'All balances must reach ${cs}0.00 before you can $action this group:',
               style: TextStyle(color: Colors.grey[700], fontSize: 13),
             ),
             const SizedBox(height: 16),
@@ -283,8 +285,8 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                     ),
                     Text(
                       isOwed
-                          ? '+£${amount.toStringAsFixed(2)}'
-                          : '−£${amount.abs().toStringAsFixed(2)}',
+                          ? '+$cs${amount.toStringAsFixed(2)}'
+                          : '−$cs${amount.abs().toStringAsFixed(2)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: isOwed
@@ -492,11 +494,12 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     final memberBalance = balances[memberId] ?? 0;
     if (memberBalance.abs() > 0.01) {
       if (!mounted) return;
+      final cs = context.read<SettingsProvider>().currencySymbol;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             '$memberName has an outstanding balance of '
-            '£${memberBalance.abs().toStringAsFixed(2)}. Settle up first.',
+            '$cs${memberBalance.abs().toStringAsFixed(2)}. Settle up first.',
           ),
           backgroundColor: AppConstants.errorColor,
         ),

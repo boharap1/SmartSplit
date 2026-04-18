@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/group_model.dart';
 import '../../models/user_model.dart';
@@ -8,6 +9,7 @@ import '../../models/bank_details_model.dart';
 import '../../services/settlement_service.dart';
 import '../../services/settlement_algorithm.dart';
 import '../../utils/constants.dart';
+import '../../providers/settings_provider.dart';
 import '../profile/bank_details_screen.dart';
 
 class SettlementsScreen extends StatefulWidget {
@@ -356,6 +358,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
   }
 
   Widget _buildSummaryTab() {
+    final cs = context.read<SettingsProvider>().currencySymbol;
     if (_settlementResult == null) {
       return const Center(child: Text('Unable to calculate settlements'));
     }
@@ -463,7 +466,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                 children: [
                   _buildStatItem(
                     'Total Debt',
-                    '£${result.totalDebt.toStringAsFixed(2)}',
+                    '$cs${result.totalDebt.toStringAsFixed(2)}',
                   ),
                   _buildStatItem(
                     'Transactions',
@@ -517,7 +520,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                 ),
               ),
               trailing: Text(
-                '£${balance.abs().toStringAsFixed(2)}',
+                '$cs${balance.abs().toStringAsFixed(2)}',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -534,6 +537,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
   }
 
   Widget _buildPersonalCard(String label, double amount, Color color) {
+    final cs = context.read<SettingsProvider>().currencySymbol;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -545,7 +549,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
           Text(label, style: TextStyle(fontSize: 13, color: color)),
           const SizedBox(height: 6),
           Text(
-            '£${amount.toStringAsFixed(2)}',
+            '$cs${amount.toStringAsFixed(2)}',
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -744,7 +748,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                     child: Column(
                       children: [
                         Text(
-                          '£${settlement.amount.toStringAsFixed(2)}',
+                          '${context.read<SettingsProvider>().currencySymbol}${settlement.amount.toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -924,7 +928,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                   ),
                 ),
                 Text(
-                  '£${record.amount.toStringAsFixed(2)}',
+                  '${context.read<SettingsProvider>().currencySymbol}${record.amount.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -1002,13 +1006,14 @@ class _SettlementConfirmationSheetState
   void _copyBankDetails() {
     if (widget.bankDetails == null) return;
 
+    final cs = context.read<SettingsProvider>().currencySymbol;
     final details =
         '''
 Account Holder: ${widget.bankDetails!.accountHolderName}
 Bank: ${widget.bankDetails!.bankName}
 Sort Code: ${widget.bankDetails!.formattedSortCode}
 Account Number: ${widget.bankDetails!.accountNumber}
-Amount: £${widget.settlement.amount.toStringAsFixed(2)}
+Amount: $cs${widget.settlement.amount.toStringAsFixed(2)}
 ''';
 
     Clipboard.setData(ClipboardData(text: details));
@@ -1071,7 +1076,7 @@ Amount: £${widget.settlement.amount.toStringAsFixed(2)}
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '£${widget.settlement.amount.toStringAsFixed(2)}',
+                      '${context.watch<SettingsProvider>().currencySymbol}${widget.settlement.amount.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 36,
                         fontWeight: FontWeight.bold,
@@ -1269,12 +1274,13 @@ class _PaymentRequestSheet extends StatelessWidget {
 
   void _copyRequest(BuildContext context) {
     final bank = myBankDetails;
+    final cs = context.read<SettingsProvider>().currencySymbol;
     final String message;
 
     if (bank != null && bank.isComplete) {
       message =
           'Hi $payerName, could you please send me '
-          '£${settlement.amount.toStringAsFixed(2)}?\n\n'
+          '$cs${settlement.amount.toStringAsFixed(2)}?\n\n'
           'Account holder: ${bank.accountHolderName}\n'
           'Bank: ${bank.bankName}\n'
           'Sort code: ${bank.formattedSortCode}\n'
@@ -1282,7 +1288,7 @@ class _PaymentRequestSheet extends StatelessWidget {
     } else {
       message =
           'Hi $payerName, could you please send me '
-          '£${settlement.amount.toStringAsFixed(2)}? Thanks!';
+          '$cs${settlement.amount.toStringAsFixed(2)}? Thanks!';
     }
 
     Clipboard.setData(ClipboardData(text: message));
@@ -1342,7 +1348,7 @@ class _PaymentRequestSheet extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '£${settlement.amount.toStringAsFixed(2)}',
+                      '${context.watch<SettingsProvider>().currencySymbol}${settlement.amount.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 36,
                         fontWeight: FontWeight.bold,

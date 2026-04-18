@@ -11,6 +11,7 @@ import '../../models/group_model.dart';
 import '../../services/settlement_service.dart';
 import '../../services/settlement_algorithm.dart';
 import '../../utils/constants.dart';
+import '../../providers/settings_provider.dart';
 import '../group/settlements_screen.dart';
 
 class ActivityTab extends StatefulWidget {
@@ -261,6 +262,7 @@ class _ActivityTabState extends State<ActivityTab>
 
   Widget _expenseCard(_ActivityItem e) {
     final gn = _groupNames[e.groupId] ?? '';
+    final cs = context.read<SettingsProvider>().currencySymbol;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
@@ -318,7 +320,7 @@ class _ActivityTabState extends State<ActivityTab>
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '£${e.amount.toStringAsFixed(2)}',
+                '$cs${e.amount.toStringAsFixed(2)}',
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -398,7 +400,7 @@ class _ActivityTabState extends State<ActivityTab>
                 ),
               ),
               Text(
-                '£${s.amount.toStringAsFixed(2)}',
+                '${context.read<SettingsProvider>().currencySymbol}${s.amount.toStringAsFixed(2)}',
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -512,8 +514,8 @@ class _ActivityTabState extends State<ActivityTab>
                               const SizedBox(height: 4),
                               Text(
                                 bal > 0
-                                    ? 'You\'re owed £${bal.toStringAsFixed(2)}'
-                                    : 'You owe £${bal.abs().toStringAsFixed(2)}',
+                                    ? 'You\'re owed ${context.read<SettingsProvider>().currencySymbol}${bal.toStringAsFixed(2)}'
+                                    : 'You owe ${context.read<SettingsProvider>().currencySymbol}${bal.abs().toStringAsFixed(2)}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: bal > 0

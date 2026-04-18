@@ -35,7 +35,14 @@ class AuthProvider extends ChangeNotifier {
     try {
       final currentUser = _authService.currentUser;
       if (currentUser != null) {
-        // Fetch user data from Firestore
+        // Check session validity (logout-all-devices support)
+        final sessionValid = await _authService.isSessionValid();
+        if (!sessionValid) {
+          await _authService.signOut();
+          _status = AuthStatus.unauthenticated;
+          notifyListeners();
+          return;
+        }
         _user = await _authService.getUserData(currentUser.uid);
         if (_user != null) {
           _status = AuthStatus.authenticated;
@@ -70,6 +77,7 @@ class AuthProvider extends ChangeNotifier {
     if (result.user != null) {
       _user = result.user;
       _status = AuthStatus.authenticated;
+      await _authService.saveLocalSessionVersion();
       notifyListeners();
       return true;
     } else {
@@ -97,6 +105,7 @@ class AuthProvider extends ChangeNotifier {
     if (result.user != null) {
       _user = result.user;
       _status = AuthStatus.authenticated;
+      await _authService.saveLocalSessionVersion();
       notifyListeners();
       return true;
     } else {
@@ -187,6 +196,48 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = result.error;
     }
     notifyListeners();
+    return result.success;
+  }
+
+  // Change Password
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    _errorMessage = null;
+    final result = await _authService.changePassword(
+      currentPassword: currentPassword,
+      newPassword:     newPassword,
+    );
+    if (!result.success) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
+    return result.success;
+  }
+
+  // Delete Account — signs out automatically on success
+  Future<bool> deleteAccount({required String password}) async {
+    _errorMessage = null;
+    final result = await _authService.deleteAccount(password: password);
+    if (result.success) {
+      _user   = null;
+      _status = AuthStatus.unauthenticated;
+    } else {
+      _errorMessage = result.error;
+    }
+    notifyListeners();
+    return result.success;
+  }
+
+  // Logout from all other devices
+  Future<bool> logoutAllDevices() async {
+    _errorMessage = null;
+    final result = await _authService.logoutAllDevices();
+    if (!result.success) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
     return result.success;
   }
 

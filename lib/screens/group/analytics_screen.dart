@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../models/group_model.dart';
 import '../../models/analytics_model.dart';
 import '../../services/analytics_service.dart';
 import '../../utils/constants.dart';
+import '../../providers/settings_provider.dart';
 
 enum TimePeriod { last7Days, lastMonth, annual, custom }
 
@@ -297,6 +299,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Widget _buildSummaryCards() {
     final analytics = _currentAnalytics;
+    final cs = context.read<SettingsProvider>().currencySymbol;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,7 +334,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             Expanded(
               child: _buildSummaryCard(
                 'Total Spent',
-                '£${analytics.totalExpenses.toStringAsFixed(2)}',
+                '$cs${analytics.totalExpenses.toStringAsFixed(2)}',
                 Icons.account_balance_wallet,
                 AppConstants.primaryColor,
               ),
@@ -354,8 +357,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               child: _buildSummaryCard(
                 'Average',
                 analytics.expenseCount > 0
-                    ? '£${analytics.averageExpense.toStringAsFixed(2)}'
-                    : '£0.00',
+                    ? '$cs${analytics.averageExpense.toStringAsFixed(2)}'
+                    : '${cs}0.00',
                 Icons.trending_up,
                 Colors.orange,
               ),
@@ -541,7 +544,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   SizedBox(
                     width: 70,
                     child: Text(
-                      '£${category.amount.toStringAsFixed(2)}',
+                      '${context.read<SettingsProvider>().currencySymbol}${category.amount.toStringAsFixed(2)}',
                       textAlign: TextAlign.right,
                       style: const TextStyle(
                         fontSize: 14,
@@ -694,7 +697,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         ),
                         children: [
                           TextSpan(
-                            text: '£${monthly.amount.toStringAsFixed(2)}',
+                            text: '${context.read<SettingsProvider>().currencySymbol}${monthly.amount.toStringAsFixed(2)}',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -755,7 +758,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       interval: maxAmount / 4,
                       getTitlesWidget: (value, meta) {
                         return Text(
-                          '£${value.toInt()}',
+                          '${context.read<SettingsProvider>().currencySymbol}${value.toInt()}',
                           style: TextStyle(
                             fontSize: 10,
                             color: Colors.grey[600],
@@ -889,7 +892,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Total: £${totalPaid.toStringAsFixed(2)}',
+            'Total: ${context.read<SettingsProvider>().currencySymbol}${totalPaid.toStringAsFixed(2)}',
             style: TextStyle(fontSize: 13, color: Colors.grey[600]),
           ),
           const SizedBox(height: 16),
@@ -985,7 +988,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '£${user.totalPaid.toStringAsFixed(2)}',
+                            '${context.read<SettingsProvider>().currencySymbol}${user.totalPaid.toStringAsFixed(2)}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,

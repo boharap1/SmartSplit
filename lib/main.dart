@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/group_provider.dart';
 import 'providers/expense_provider.dart';
+import 'providers/settings_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home/main_navigation.dart';
 import 'utils/constants.dart';
@@ -11,11 +12,14 @@ import 'utils/constants.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  runApp(const MyApp());
+  final settings = SettingsProvider();
+  await settings.initialize();
+  runApp(MyApp(settings: settings));
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  final SettingsProvider settings;
+  const MyApp({super.key, required this.settings});
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -26,6 +30,7 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider.value(value: widget.settings),
         ChangeNotifierProvider(create: (_) => AuthProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => GroupProvider()),
         ChangeNotifierProvider(create: (_) => ExpenseProvider()),

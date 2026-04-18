@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../models/group_model.dart';
 import '../../services/receipt_scanner_service.dart';
 import '../../utils/constants.dart';
+import '../../providers/settings_provider.dart';
 import '../../widgets/custom_button.dart';
 import 'add_expense_screen.dart';
 
@@ -295,7 +297,7 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
                     _buildDataRow(
                       'Amount',
                       _scannedData!.totalAmount != null
-                          ? '£${_scannedData!.totalAmount!.toStringAsFixed(2)}'
+                          ? '${context.read<SettingsProvider>().currencySymbol}${_scannedData!.totalAmount!.toStringAsFixed(2)}'
                           : 'Not detected',
                       _scannedData!.totalAmount != null,
                     ),

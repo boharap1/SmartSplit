@@ -6,6 +6,7 @@ import '../../providers/group_provider.dart';
 import '../../models/group_model.dart';
 import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
+import '../../providers/settings_provider.dart';
 import '../group/create_group_screen.dart';
 import '../group/join_group_screen.dart';
 import '../group/group_details_screen.dart';
@@ -765,8 +766,8 @@ class GroupsTab extends StatelessWidget {
                     const SizedBox(width: 10),
                     Text(
                       userBalance > 0
-                          ? 'You are owed £${userBalance.toStringAsFixed(2)}'
-                          : 'You owe £${userBalance.abs().toStringAsFixed(2)}',
+                          ? 'You are owed ${context.read<SettingsProvider>().currencySymbol}${userBalance.toStringAsFixed(2)}'
+                          : 'You owe ${context.read<SettingsProvider>().currencySymbol}${userBalance.abs().toStringAsFixed(2)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
@@ -880,7 +881,7 @@ class GroupsTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'All balances must be £0.00 before deleting "${group.groupName}". '
+                'All balances must be ${context.read<SettingsProvider>().currencySymbol}0.00 before deleting "${group.groupName}". '
                 '${unsettled.length} member${unsettled.length > 1 ? 's have' : ' has'} outstanding balances:',
                 style: TextStyle(color: Colors.grey[700], fontSize: 13),
               ),
@@ -911,8 +912,8 @@ class GroupsTab extends StatelessWidget {
                       ),
                       Text(
                         isOwed
-                            ? '+£${amount.toStringAsFixed(2)}'
-                            : '−£${amount.abs().toStringAsFixed(2)}',
+                            ? '+${context.read<SettingsProvider>().currencySymbol}${amount.toStringAsFixed(2)}'
+                            : '−${context.read<SettingsProvider>().currencySymbol}${amount.abs().toStringAsFixed(2)}',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,

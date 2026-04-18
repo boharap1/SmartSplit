@@ -13,6 +13,7 @@ import '../group/join_group_screen.dart';
 import '../group/scan_receipt_screen.dart';
 import '../group/add_expense_screen.dart';
 import 'app_menu.dart';
+import '../../providers/settings_provider.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -185,6 +186,7 @@ class _HomeTabState extends State<HomeTab> {
 
   Widget _buildBalanceSummary() {
     final net = _totalOwedToYou - _totalOwed;
+    final cs = context.read<SettingsProvider>().currencySymbol;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -247,7 +249,7 @@ class _HomeTabState extends State<HomeTab> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Net: ${net >= 0 ? '+' : '-'}£${net.abs().toStringAsFixed(2)}',
+                  'Net: ${net >= 0 ? '+' : '-'}${cs}${net.abs().toStringAsFixed(2)}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
@@ -265,6 +267,7 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Widget _balanceItem(String label, double amount, Color color, IconData icon) {
+    final cs = context.read<SettingsProvider>().currencySymbol;
     return Column(
       children: [
         Row(
@@ -280,7 +283,7 @@ class _HomeTabState extends State<HomeTab> {
         ),
         const SizedBox(height: 6),
         Text(
-          '£${amount.toStringAsFixed(2)}',
+          '$cs${amount.toStringAsFixed(2)}',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
@@ -644,6 +647,7 @@ class _HomeTabState extends State<HomeTab> {
   Widget _groupCard(GroupModel group) {
     final balance = _groupBalances[group.groupId] ?? 0;
     final pos = balance >= 0;
+    final cs = context.read<SettingsProvider>().currencySymbol;
     final colors = [
       const Color(0xFF5C6BC0),
       const Color(0xFFFF7043),
@@ -735,7 +739,7 @@ class _HomeTabState extends State<HomeTab> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${pos && balance != 0 ? '+' : ''}£${balance.abs().toStringAsFixed(2)}',
+                      '${pos && balance != 0 ? '+' : ''}$cs${balance.abs().toStringAsFixed(2)}',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
