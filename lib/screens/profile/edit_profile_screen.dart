@@ -202,7 +202,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final user = context.watch<AuthProvider>().user;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Edit Profile'),
         backgroundColor: AppConstants.primaryColor,
@@ -387,7 +386,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ? Image.file(_pickedImage!, fit: BoxFit.cover)
             : showNetwork
                 ? Image.network(
-                    user!.profilePicture!,
+                    user.profilePicture!,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => _initialsWidget(initials),
                   )

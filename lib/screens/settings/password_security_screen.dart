@@ -96,7 +96,6 @@ class _PasswordSecurityScreenState extends State<PasswordSecurityScreen> {
     final s       = _strength(newVal);
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Password & Security'),
         backgroundColor: AppConstants.primaryColor,

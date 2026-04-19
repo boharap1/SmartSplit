@@ -142,7 +142,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = authProvider.user;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text(
           AppConstants.appName,

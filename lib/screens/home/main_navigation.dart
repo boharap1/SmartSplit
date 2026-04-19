@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../utils/constants.dart';
 import 'home_tab.dart';
 import 'groups_tab.dart';
@@ -34,12 +35,17 @@ class _MainNavigationState extends State<MainNavigation> {
       final userId = context.read<AuthProvider>().firebaseUser?.uid;
       if (userId != null) {
         context.read<GroupProvider>().startListeningToGroups(userId);
+        // Initialise notifications: request FCM permission, register token,
+        // and begin streaming the user's notification subcollection.
+        context.read<NotificationProvider>().initialize(userId);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: _tabs),
       bottomNavigationBar: Container(
@@ -55,13 +61,13 @@ class _MainNavigationState extends State<MainNavigation> {
         child: NavigationBar(
           selectedIndex: _currentIndex,
           onDestinationSelected: (i) => setState(() => _currentIndex = i),
-          backgroundColor: Colors.white,
+          backgroundColor: cs.surface,
           indicatorColor: AppConstants.primaryColor.withValues(alpha: 0.15),
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           height: 68,
           destinations: [
             NavigationDestination(
-              icon: Icon(Icons.home_outlined, color: Colors.grey[600]),
+              icon: Icon(Icons.home_outlined, color: cs.onSurfaceVariant),
               selectedIcon: const Icon(
                 Icons.home_rounded,
                 color: AppConstants.primaryColor,
@@ -69,7 +75,7 @@ class _MainNavigationState extends State<MainNavigation> {
               label: 'Home',
             ),
             NavigationDestination(
-              icon: Icon(Icons.group_outlined, color: Colors.grey[600]),
+              icon: Icon(Icons.group_outlined, color: cs.onSurfaceVariant),
               selectedIcon: const Icon(
                 Icons.group_rounded,
                 color: AppConstants.primaryColor,
@@ -77,7 +83,8 @@ class _MainNavigationState extends State<MainNavigation> {
               label: 'Groups',
             ),
             NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined, color: Colors.grey[600]),
+              icon: Icon(Icons.receipt_long_outlined,
+                  color: cs.onSurfaceVariant),
               selectedIcon: const Icon(
                 Icons.receipt_long_rounded,
                 color: AppConstants.primaryColor,
@@ -85,7 +92,7 @@ class _MainNavigationState extends State<MainNavigation> {
               label: 'Activity',
             ),
             NavigationDestination(
-              icon: Icon(Icons.insights_outlined, color: Colors.grey[600]),
+              icon: Icon(Icons.insights_outlined, color: cs.onSurfaceVariant),
               selectedIcon: const Icon(
                 Icons.insights_rounded,
                 color: AppConstants.primaryColor,

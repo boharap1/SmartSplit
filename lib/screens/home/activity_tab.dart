@@ -7,9 +7,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/expense_model.dart';
 import '../../models/user_model.dart';
-import '../../models/group_model.dart';
-import '../../services/settlement_service.dart';
-import '../../services/settlement_algorithm.dart';
 import '../../utils/constants.dart';
 import '../../providers/settings_provider.dart';
 import '../group/settlements_screen.dart';
@@ -27,8 +24,8 @@ class _ActivityTabState extends State<ActivityTab>
   List<_ActivityItem> _expenses = [];
   List<_SettlementItem> _settlements = [];
   Map<String, double> _groupBalances = {};
-  Map<String, String> _userNames = {};
-  Map<String, String> _groupNames = {};
+  final Map<String, String> _userNames = {};
+  final Map<String, String> _groupNames = {};
   bool _isLoading = true;
 
   @override
@@ -152,21 +149,23 @@ class _ActivityTabState extends State<ActivityTab>
             .collection('users')
             .where(FieldPath.documentId, whereIn: batch)
             .get();
-        for (final doc in snap.docs)
+        for (final doc in snap.docs) {
           _userNames[doc.id] = UserModel.fromFirestore(doc).name;
+        }
       } catch (_) {}
     }
 
     expenses.sort((a, b) => b.date.compareTo(a.date));
     settlements.sort((a, b) => b.date.compareTo(a.date));
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _expenses = expenses;
         _settlements = settlements;
         _groupBalances = balances;
         _isLoading = false;
       });
+    }
   }
 
   String _name(String uid) {
@@ -177,7 +176,6 @@ class _ActivityTabState extends State<ActivityTab>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Activity',
@@ -220,12 +218,13 @@ class _ActivityTabState extends State<ActivityTab>
   }
 
   Widget _buildExpensesTab() {
-    if (_expenses.isEmpty)
+    if (_expenses.isEmpty) {
       return _emptyState(
         Icons.receipt_long_outlined,
         'No expenses yet',
         'Add expenses to see them here',
       );
+    }
     return RefreshIndicator(
       onRefresh: _loadData,
       color: AppConstants.primaryColor,
@@ -267,7 +266,7 @@ class _ActivityTabState extends State<ActivityTab>
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -338,12 +337,13 @@ class _ActivityTabState extends State<ActivityTab>
   }
 
   Widget _buildHistoryTab() {
-    if (_settlements.isEmpty)
+    if (_settlements.isEmpty) {
       return _emptyState(
         Icons.history,
         'No settlement history',
         'Completed settlements appear here',
       );
+    }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _settlements.length,
@@ -354,7 +354,7 @@ class _ActivityTabState extends State<ActivityTab>
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
@@ -472,7 +472,7 @@ class _ActivityTabState extends State<ActivityTab>
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
@@ -583,7 +583,7 @@ class _ActivityTabState extends State<ActivityTab>
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(

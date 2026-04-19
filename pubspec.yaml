@@ -34,6 +34,9 @@ dependencies:
   # Charts
   fl_chart: ^0.69.0
 
+  # Notifications
+  flutter_local_notifications: ^18.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

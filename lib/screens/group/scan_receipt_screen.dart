@@ -154,7 +154,6 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Scan Receipt'),
         backgroundColor: AppConstants.primaryColor,
@@ -268,7 +267,7 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
               Container(
                 padding: const EdgeInsets.all(AppConstants.defaultPadding),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(AppConstants.borderRadius),
                   border: Border.all(color: AppConstants.primaryColor.withOpacity(0.3)),
                 ),

@@ -5,14 +5,18 @@ class SettingsProvider extends ChangeNotifier {
   static const _kLanguage = 'settings_language';
   static const _kTimeZone = 'settings_timezone';
   static const _kCurrency = 'settings_currency';
+  static const _kTheme    = 'settings_theme';
 
-  String _language = 'English';
-  String _timeZone = 'Europe/London';
-  String _currency = 'GBP';
+  String    _language  = 'English';
+  String    _timeZone  = 'Europe/London';
+  String    _currency  = 'GBP';
+  ThemeMode _themeMode = ThemeMode.light;
 
-  String get language     => _language;
-  String get timeZone     => _timeZone;
-  String get currency     => _currency;
+  String    get language      => _language;
+  String    get timeZone      => _timeZone;
+  String    get currency      => _currency;
+  ThemeMode get themeMode     => _themeMode;
+  bool      get isDarkMode    => _themeMode == ThemeMode.dark;
   String get currencySymbol => _symbols[_currency] ?? _currency;
 
   String formatAmount(double amount) =>
@@ -89,6 +93,8 @@ class SettingsProvider extends ChangeNotifier {
     _language = prefs.getString(_kLanguage) ?? 'English';
     _timeZone = prefs.getString(_kTimeZone) ?? 'Europe/London';
     _currency = prefs.getString(_kCurrency) ?? 'GBP';
+    final themeStr = prefs.getString(_kTheme) ?? 'light';
+    _themeMode = themeStr == 'dark' ? ThemeMode.dark : ThemeMode.light;
     notifyListeners();
   }
 
@@ -115,6 +121,13 @@ class SettingsProvider extends ChangeNotifier {
     _currency = currency;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kCurrency, currency);
+    notifyListeners();
+  }
+
+  Future<void> toggleTheme() async {
+    _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kTheme, _themeMode == ThemeMode.dark ? 'dark' : 'light');
     notifyListeners();
   }
 }

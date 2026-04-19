@@ -316,7 +316,6 @@ class _SettlementsScreenState extends State<SettlementsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Settle Up'),
         backgroundColor: AppConstants.primaryColor,
@@ -1099,7 +1098,7 @@ Amount: $cs${widget.settlement.amount.toStringAsFixed(2)}
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(
                       AppConstants.borderRadius,
                     ),
@@ -1370,7 +1369,7 @@ class _PaymentRequestSheet extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius:
                         BorderRadius.circular(AppConstants.borderRadius),
                     border: Border.all(color: Colors.grey[300]!),

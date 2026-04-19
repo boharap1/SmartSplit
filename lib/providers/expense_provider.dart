@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/expense_model.dart';
+import '../models/notification_model.dart';
 import '../services/expense_service.dart';
+import '../services/notification_service.dart';
 
 enum ExpenseStatus { initial, loading, loaded, error }
 
@@ -75,6 +77,9 @@ class ExpenseProvider extends ChangeNotifier {
     String? category,
     required DateTime date,
     required String createdBy,
+    // Optional – used to build notification messages.
+    String? groupName,
+    String? paidByName,
   }) async {
     _errorMessage = null;
     notifyListeners();
@@ -105,6 +110,22 @@ class ExpenseProvider extends ChangeNotifier {
     if (result.error != null) {
       _errorMessage = result.error;
       notifyListeners();
+    }
+
+    // Notify other participants about the new expense.
+    if (result.expense != null && participantIds.length > 1) {
+      final actor = paidByName ?? 'Someone';
+      final inGroup = groupName != null ? ' in $groupName' : '';
+      NotificationService.dispatch(
+        toUserIds: participantIds,
+        excludeUserId: createdBy,
+        type: NotificationType.expenseAdded,
+        title: 'New expense$inGroup',
+        body: '$actor added "$description" (£${totalAmount.toStringAsFixed(2)})',
+        groupId: groupId,
+        relatedId: result.expense!.expenseId,
+        fromUserName: paidByName,
+      );
     }
 
     return result;

@@ -195,7 +195,6 @@ class _PersonalInformationScreenState
     final isVerified = context.watch<AuthProvider>().isEmailVerified;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Personal Information'),
         backgroundColor: AppConstants.primaryColor,
@@ -418,7 +417,7 @@ class _PersonalInformationScreenState
               ],
             ),
           ),
-          if (trailing != null) trailing,
+          ?trailing,
           if (onEdit != null)
             GestureDetector(
               onTap: onEdit,

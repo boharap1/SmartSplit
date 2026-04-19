@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/settlement_model.dart';
-import '../models/expense_model.dart';
 import '../models/bank_details_model.dart';
+import '../models/expense_model.dart';
+import '../models/notification_model.dart';
+import '../models/settlement_model.dart';
+import 'notification_service.dart';
 import 'settlement_algorithm.dart';
 
 class SettlementService {
@@ -104,6 +106,9 @@ class SettlementService {
     String? paymentMethod,
     String? paymentReference,
     String? note,
+    // Optional – used to build the payment-received notification.
+    String? fromUserName,
+    String? groupName,
   }) async {
     try {
       if (amount <= 0) {
@@ -127,6 +132,19 @@ class SettlementService {
       );
 
       await docRef.set(settlement.toFirestore());
+
+      // Notify the recipient that they received a payment.
+      final payer = fromUserName ?? 'Someone';
+      final inGroup = groupName != null ? ' in $groupName' : '';
+      NotificationService.dispatch(
+        toUserIds: [toUserId],
+        type: NotificationType.paymentReceived,
+        title: 'Payment received$inGroup',
+        body: '$payer paid you £${settlement.amount.toStringAsFixed(2)}',
+        groupId: groupId,
+        relatedId: docRef.id,
+        fromUserName: fromUserName,
+      );
 
       return (settlement: settlement, error: null);
     } catch (e) {

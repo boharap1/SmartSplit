@@ -236,7 +236,6 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Join Group'),
         backgroundColor: AppConstants.primaryColor,

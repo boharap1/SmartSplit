@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group_model.dart';
+import '../models/notification_model.dart';
+import 'notification_service.dart';
 
 class GroupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -109,6 +111,8 @@ class GroupService {
   Future<({GroupModel? group, String? error})> joinGroupByCode({
     required String code,
     required String userId,
+    // Optional – used to build the member-joined notification.
+    String? joiningUserName,
   }) async {
     try {
       final QuerySnapshot querySnapshot = await _groupsCollection
@@ -137,6 +141,18 @@ class GroupService {
       await _groupsCollection.doc(group.groupId).update({
         'members': FieldValue.arrayUnion([userId]),
       });
+
+      // Notify existing members that someone joined.
+      final joiner = joiningUserName ?? 'Someone';
+      NotificationService.dispatch(
+        toUserIds: group.members,
+        excludeUserId: userId,
+        type: NotificationType.memberJoined,
+        title: 'New member in ${group.groupName}',
+        body: '$joiner joined the group',
+        groupId: group.groupId,
+        fromUserName: joiningUserName,
+      );
 
       final updatedDoc = await _groupsCollection.doc(group.groupId).get();
       return (group: GroupModel.fromFirestore(updatedDoc), error: null);

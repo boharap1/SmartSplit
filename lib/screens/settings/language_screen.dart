@@ -11,7 +11,6 @@ class LanguageScreen extends StatelessWidget {
     final current = context.watch<SettingsProvider>().language;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Language'),
         backgroundColor: AppConstants.primaryColor,

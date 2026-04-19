@@ -17,7 +17,6 @@ class GroupsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text(
           'Groups',
@@ -145,7 +144,7 @@ class GroupsTab extends StatelessWidget {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -494,13 +493,14 @@ class GroupsTab extends StatelessWidget {
                     ? null
                     : descCtrl.text.trim(),
               );
-              if (context.mounted)
+              if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Group updated'),
                     backgroundColor: AppConstants.successColor,
                   ),
                 );
+              }
             },
             child: const Text('Save'),
           ),

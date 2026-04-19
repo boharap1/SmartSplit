@@ -31,11 +31,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final userId = context.read<AuthProvider>().firebaseUser?.uid;
     if (userId == null) return;
     final details = await _settlementService.getBankDetails(userId);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _bankDetails = details;
         _isLoadingBank = false;
       });
+    }
   }
 
   void _navigateToBankDetails() async {
@@ -86,7 +87,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isVerified = context.watch<AuthProvider>().isEmailVerified;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -155,7 +155,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
@@ -350,7 +350,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _menuCard(List<Widget> children) => Container(
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(14),
       boxShadow: [
         BoxShadow(

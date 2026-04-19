@@ -12,6 +12,8 @@ import '../settings/language_screen.dart';
 import '../settings/time_zone_screen.dart';
 import '../settings/currency_screen.dart';
 import '../settings/password_security_screen.dart';
+import '../../providers/notification_provider.dart';
+import '../../providers/settings_provider.dart';
 
 /// Opens the full-height slide-in app menu from the left edge.
 void showAppMenu(BuildContext context) {
@@ -53,8 +55,6 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
   bool _profileExpanded  = false;
   bool _settingsExpanded = false;
   bool _privacyExpanded  = false;
-  bool _darkMode         = false;
-  bool _notificationsOn  = true;
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -307,17 +307,20 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().user;
-    final width = MediaQuery.of(context).size.width * 0.82;
+    final user          = context.watch<AuthProvider>().user;
+    final settings      = context.watch<SettingsProvider>();
+    final notifications = context.watch<NotificationProvider>();
+    final cs            = Theme.of(context).colorScheme;
+    final width         = MediaQuery.of(context).size.width * 0.82;
 
     return Material(
       color: Colors.transparent,
       child: Container(
         width: width,
         height: double.infinity,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
+        decoration: BoxDecoration(
+          color: cs.surface,
+          borderRadius: const BorderRadius.only(
             topRight:    Radius.circular(24),
             bottomRight: Radius.circular(24),
           ),
@@ -407,8 +410,8 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                     icon: Icons.dark_mode_outlined,
                     iconColor: const Color(0xFF5C6BC0),
                     label: 'Dark Mode',
-                    value: _darkMode,
-                    onChanged: (v) => setState(() => _darkMode = v),
+                    value: settings.isDarkMode,
+                    onChanged: (_) => settings.toggleTheme(),
                   ),
 
                   // ── Notifications toggle ──────────────────────────────────
@@ -416,8 +419,9 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                     icon: Icons.notifications_outlined,
                     iconColor: const Color(0xFFAB47BC),
                     label: 'Notifications',
-                    value: _notificationsOn,
-                    onChanged: (v) => setState(() => _notificationsOn = v),
+                    value: notifications.enabled,
+                    onChanged: (_) => notifications.setEnabled(
+                        value: !notifications.enabled),
                   ),
 
                   _divider(),
@@ -559,10 +563,10 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                 Expanded(
                   child: Text(
                     label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: Color(0xFF1A1A2E),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -572,7 +576,7 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                   child: Icon(
                     Icons.chevron_right_rounded,
                     size: 20,
-                    color: Colors.grey[400],
+                    color: Theme.of(context).colorScheme.outlineVariant,
                   ),
                 ),
               ],
@@ -595,17 +599,18 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
 
   // Sub-item under an expandable section (one indent level)
   Widget _subTile(IconData icon, String label, VoidCallback onTap) {
+    final cs = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.only(left: 52, right: 16, top: 10, bottom: 10),
         child: Row(
           children: [
-            Icon(icon, size: 17, color: Colors.grey[600]),
+            Icon(icon, size: 17, color: cs.onSurfaceVariant),
             const SizedBox(width: 12),
             Text(
               label,
-              style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+              style: TextStyle(fontSize: 13, color: cs.onSurface),
             ),
           ],
         ),
@@ -616,6 +621,7 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
   // ── Privacy nested section ────────────────────────────────────────────────
 
   Widget _buildPrivacySection() {
+    final cs = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -626,12 +632,12 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                 left: 52, right: 16, top: 10, bottom: 10),
             child: Row(
               children: [
-                Icon(Icons.security_outlined, size: 17, color: Colors.grey[600]),
+                Icon(Icons.security_outlined, size: 17, color: cs.onSurfaceVariant),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'Privacy',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                    style: TextStyle(fontSize: 13, color: cs.onSurface),
                   ),
                 ),
                 AnimatedRotation(
@@ -640,7 +646,7 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                   child: Icon(
                     Icons.chevron_right_rounded,
                     size: 16,
-                    color: Colors.grey[400],
+                    color: cs.outlineVariant,
                   ),
                 ),
               ],
@@ -685,7 +691,8 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
     VoidCallback onTap, {
     bool isDestructive = false,
   }) {
-    final color = isDestructive ? AppConstants.errorColor : Colors.grey[600]!;
+    final cs = Theme.of(context).colorScheme;
+    final color = isDestructive ? AppConstants.errorColor : cs.onSurfaceVariant;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -700,7 +707,7 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                 label,
                 style: TextStyle(
                   fontSize: 12.5,
-                  color: isDestructive ? AppConstants.errorColor : Colors.grey[800],
+                  color: isDestructive ? AppConstants.errorColor : cs.onSurface,
                 ),
               ),
             ),
@@ -729,14 +736,15 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF1A1A2E),
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ),
-            Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey[300]),
+            Icon(Icons.chevron_right_rounded, size: 18,
+                color: Theme.of(context).colorScheme.outlineVariant),
           ],
         ),
       ),
@@ -761,10 +769,10 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF1A1A2E),
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
           ),
@@ -827,8 +835,8 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
     );
   }
 
-  Widget _divider() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Divider(color: Colors.grey[150], height: 1),
+  Widget _divider() => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Divider(height: 1),
       );
 }

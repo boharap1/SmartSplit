@@ -49,7 +49,6 @@ class _TimeZoneScreenState extends State<TimeZoneScreen> {
     final filtered = _filtered;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Time Zone'),
         backgroundColor: AppConstants.primaryColor,

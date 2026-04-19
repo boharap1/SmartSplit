@@ -93,7 +93,6 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
     final email = context.watch<AuthProvider>().user?.email ?? '';
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Verify Account'),
         backgroundColor: AppConstants.primaryColor,

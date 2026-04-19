@@ -13,7 +13,9 @@ import '../group/join_group_screen.dart';
 import '../group/scan_receipt_screen.dart';
 import '../group/add_expense_screen.dart';
 import 'app_menu.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../notifications/notification_center_screen.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -64,9 +66,9 @@ class _HomeTabState extends State<HomeTab> {
 
   double get _totalOwed => _groupBalances.values
       .where((b) => b < 0)
-      .fold(0.0, (sum, b) => sum + b.abs());
+      .fold(0.0, (acc, b) => acc + b.abs());
   double get _totalOwedToYou =>
-      _groupBalances.values.where((b) => b > 0).fold(0.0, (sum, b) => sum + b);
+      _groupBalances.values.where((b) => b > 0).fold(0.0, (acc, b) => acc + b);
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +76,6 @@ class _HomeTabState extends State<HomeTab> {
     final groups = context.watch<GroupProvider>().groups;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       body: RefreshIndicator(
         onRefresh: _loadAllBalances,
         color: AppConstants.primaryColor,
@@ -166,13 +167,13 @@ class _HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
-                  // Notification (right)
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(
-                      Icons.notifications_outlined,
-                      color: Colors.white,
-                      size: 26,
+                  // Notification bell with unread badge
+                  _NotificationBell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationCenterScreen(),
+                      ),
                     ),
                   ),
                 ],
@@ -190,7 +191,7 @@ class _HomeTabState extends State<HomeTab> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -249,7 +250,7 @@ class _HomeTabState extends State<HomeTab> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Net: ${net >= 0 ? '+' : '-'}${cs}${net.abs().toStringAsFixed(2)}',
+                  'Net: ${net >= 0 ? '+' : '-'}$cs${net.abs().toStringAsFixed(2)}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
@@ -617,7 +618,7 @@ class _HomeTabState extends State<HomeTab> {
           margin: const EdgeInsets.symmetric(horizontal: 16),
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
@@ -659,7 +660,7 @@ class _HomeTabState extends State<HomeTab> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
@@ -786,5 +787,55 @@ class _HomeTabState extends State<HomeTab> {
     if (h < 12) return 'morning';
     if (h < 17) return 'afternoon';
     return 'evening';
+  }
+}
+
+// ── Notification bell with unread-count badge ─────────────────────────────
+
+class _NotificationBell extends StatelessWidget {
+  final VoidCallback onTap;
+  const _NotificationBell({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final count = context.watch<NotificationProvider>().unreadCount;
+
+    return IconButton(
+      onPressed: onTap,
+      tooltip: 'Notifications',
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Icon(
+            Icons.notifications_outlined,
+            color: Colors.white,
+            size: 26,
+          ),
+          if (count > 0)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                constraints:
+                    const BoxConstraints(minWidth: 16, minHeight: 16),
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  count > 99 ? '99+' : '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

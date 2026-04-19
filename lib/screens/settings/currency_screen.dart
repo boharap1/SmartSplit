@@ -25,7 +25,6 @@ class CurrencyScreen extends StatelessWidget {
     final current  = settings.currency;
 
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Currency'),
         backgroundColor: AppConstants.primaryColor,

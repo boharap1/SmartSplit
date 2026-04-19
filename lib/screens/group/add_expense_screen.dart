@@ -221,7 +221,6 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   Widget build(BuildContext context) {
     final cs = context.watch<SettingsProvider>().currencySymbol;
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Add Expense'),
         backgroundColor: AppConstants.primaryColor,
@@ -316,7 +315,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(
                             AppConstants.borderRadius,
                           ),
@@ -356,7 +355,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(
                           AppConstants.borderRadius,
                         ),
@@ -397,7 +396,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     const SizedBox(height: 8),
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(
                           AppConstants.borderRadius,
                         ),
@@ -454,7 +453,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     const SizedBox(height: 8),
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(
                           AppConstants.borderRadius,
                         ),

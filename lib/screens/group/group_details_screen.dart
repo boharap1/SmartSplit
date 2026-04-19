@@ -669,7 +669,6 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
         });
 
         return Scaffold(
-          backgroundColor: AppConstants.backgroundColor,
           appBar: AppBar(
             title: Text(group.groupName),
             backgroundColor: AppConstants.primaryColor,
@@ -742,7 +741,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     return Container(
       padding: const EdgeInsets.all(AppConstants.largePadding),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         boxShadow: [
           BoxShadow(
@@ -895,7 +894,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 24, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius:
                       BorderRadius.circular(AppConstants.borderRadius),
                   border: Border.all(
@@ -977,7 +976,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     return Container(
       padding: const EdgeInsets.all(AppConstants.largePadding),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         boxShadow: [
           BoxShadow(
