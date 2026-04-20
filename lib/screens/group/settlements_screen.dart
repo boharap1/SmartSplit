@@ -195,6 +195,8 @@ class _SettlementsScreenState extends State<SettlementsScreen>
       paymentMethod: paymentMethod,
       paymentReference: paymentReference,
       note: note,
+      fromUserName: _getMemberName(settlement.fromUserId),
+      groupName: widget.group.groupName,
     );
 
     if (mounted) {

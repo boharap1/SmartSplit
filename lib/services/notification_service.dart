@@ -48,6 +48,12 @@ class NotificationService {
           ),
         );
 
+    // Local notification permission (Android 13+ requires explicit runtime grant)
+    await _local
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+
     // FCM permission (required on Android 13+ / iOS)
     await _fcm.requestPermission(alert: true, badge: true, sound: true);
 

@@ -210,9 +210,11 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
     }
 
     // Attempt to join
+    final userName = context.read<AuthProvider>().user?.name;
     final result = await context.read<GroupProvider>().joinGroup(
       code: _fullCode,
       userId: userId,
+      joiningUserName: userName,
     );
 
     if (!mounted) return;

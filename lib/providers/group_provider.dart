@@ -227,6 +227,7 @@ class GroupProvider extends ChangeNotifier {
   Future<({GroupModel? group, String? error})> joinGroup({
     required String code,
     required String userId,
+    String? joiningUserName,
   }) async {
     _status = GroupStatus.loading;
     _errorMessage = null;
@@ -235,6 +236,7 @@ class GroupProvider extends ChangeNotifier {
     final result = await _groupService.joinGroupByCode(
       code: code,
       userId: userId,
+      joiningUserName: joiningUserName,
     );
 
     if (result.group != null) {

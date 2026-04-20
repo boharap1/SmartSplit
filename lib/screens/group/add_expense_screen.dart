@@ -199,6 +199,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           category: _selectedCategory,
           date: _selectedDate,
           createdBy: currentUserId!,
+          groupName: widget.group.groupName,
+          paidByName: _memberCache[_selectedPayer!]?.name,
         );
 
     setState(() => _isLoading = false);
