@@ -3,7 +3,13 @@
     "allow": [
       "Bash(flutter pub *)",
       "Bash(flutter analyze *)",
-      "Bash(flutter clean *)"
+      "Bash(flutter clean *)",
+      "Bash(xargs grep *)",
+      "Bash(npm --version)",
+      "Bash(firebase --version)",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(firebase --version)"
     ]
   }
 }

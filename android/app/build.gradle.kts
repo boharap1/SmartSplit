@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.smartsplit"
-        minSdk = flutter.minSdkVersion
+        minSdk = flutter.minSdkVersion  // flutter_secure_storage EncryptedSharedPreferences + local_auth BiometricPrompt
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

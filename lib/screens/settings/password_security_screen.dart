@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/biometric_service.dart';
 import '../../utils/constants.dart';
+import '../../utils/password_strength.dart';
 
 class PasswordSecurityScreen extends StatefulWidget {
   const PasswordSecurityScreen({super.key});
@@ -17,10 +19,62 @@ class _PasswordSecurityScreenState extends State<PasswordSecurityScreen> {
   final _newCtrl      = TextEditingController();
   final _confirmCtrl  = TextEditingController();
 
-  bool _showCurrent   = false;
-  bool _showNew       = false;
-  bool _showConfirm   = false;
-  bool _isSaving      = false;
+  bool _showCurrent        = false;
+  bool _showNew            = false;
+  bool _showConfirm        = false;
+  bool _isSaving           = false;
+
+  // ── Biometric state ────────────────────────────────────────────────────────
+  bool   _biometricAvailable     = false;
+  bool   _biometricEnabled       = false;
+  bool   _isTogglingBiometric    = false;
+  String _biometricLabel         = 'Biometric';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBiometricState();
+  }
+
+  Future<void> _loadBiometricState() async {
+    final available = await BiometricService.instance.isAvailable();
+    if (!available || !mounted) return;
+    // Read context-dependent value before the next await.
+    final enabled = context.read<AuthProvider>().biometricEnabled;
+    final label   = await BiometricService.instance.primaryLabel();
+    if (!mounted) return;
+    setState(() {
+      _biometricAvailable = true;
+      _biometricLabel     = label;
+      _biometricEnabled   = enabled;
+    });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    if (_isTogglingBiometric) return;
+    setState(() => _isTogglingBiometric = true);
+
+    final auth    = context.read<AuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final success = await auth.setBiometricEnabled(value: value);
+
+    if (!mounted) return;
+    setState(() {
+      _isTogglingBiometric = false;
+      if (success) _biometricEnabled = value;
+    });
+
+    if (!success && value) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Biometric authentication not available or cancelled.',
+          ),
+          backgroundColor: AppConstants.errorColor,
+        ),
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -28,30 +82,6 @@ class _PasswordSecurityScreenState extends State<PasswordSecurityScreen> {
     _newCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
-  }
-
-  // ── Password strength ──────────────────────────────────────────────────────
-
-  int _strength(String p) {
-    int score = 0;
-    if (p.length >= 8)                      score++;
-    if (RegExp(r'[A-Z]').hasMatch(p))       score++;
-    if (RegExp(r'[a-z]').hasMatch(p))       score++;
-    if (RegExp(r'[0-9]').hasMatch(p))       score++;
-    if (RegExp(r'[^A-Za-z0-9]').hasMatch(p)) score++;
-    return score;
-  }
-
-  Color _strengthColor(int s) {
-    if (s <= 1) return AppConstants.errorColor;
-    if (s <= 3) return const Color(0xFFFFB300);
-    return AppConstants.successColor;
-  }
-
-  String _strengthLabel(int s) {
-    if (s <= 1) return 'Weak';
-    if (s <= 3) return 'Fair';
-    return 'Strong';
   }
 
   // ── Save ───────────────────────────────────────────────────────────────────
@@ -93,7 +123,7 @@ class _PasswordSecurityScreenState extends State<PasswordSecurityScreen> {
   @override
   Widget build(BuildContext context) {
     final newVal  = _newCtrl.text;
-    final s       = _strength(newVal);
+    final s       = measurePasswordStrength(newVal);
 
     return Scaffold(
       appBar: AppBar(
@@ -109,6 +139,42 @@ class _PasswordSecurityScreenState extends State<PasswordSecurityScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Biometric lock ──────────────────────────────────────────
+              if (_biometricAvailable) ...[
+                _sectionLabel('Biometric Lock'),
+                _sectionCard([
+                  SwitchListTile(
+                    value: _biometricEnabled,
+                    onChanged: _isTogglingBiometric ? null : _toggleBiometric,
+                    activeThumbColor: AppConstants.primaryColor,
+                    secondary: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.fingerprint_rounded,
+                        color: AppConstants.primaryColor,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      'Unlock with $_biometricLabel',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    subtitle: Text(
+                      _biometricEnabled
+                          ? 'App requires $_biometricLabel on every launch'
+                          : 'Use password only',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 24),
+              ],
+
               _sectionCard([
                 _field(
                   controller:  _currentCtrl,
@@ -135,7 +201,7 @@ class _PasswordSecurityScreenState extends State<PasswordSecurityScreen> {
                   onChanged:   (_) => setState(() {}),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Enter a new password';
-                    if (v.length < 6) return 'Password must be at least 6 characters';
+                    if (v.length < 8) return 'Password must be at least 8 characters';
                     if (v == _currentCtrl.text) return 'New password must differ from current';
                     return null;
                   },
@@ -152,21 +218,20 @@ class _PasswordSecurityScreenState extends State<PasswordSecurityScreen> {
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(4),
                                 child: LinearProgressIndicator(
-                                  value: s / 5,
+                                  value: s.fraction,
                                   minHeight: 4,
                                   backgroundColor: Colors.grey[200],
-                                  valueColor: AlwaysStoppedAnimation(
-                                      _strengthColor(s)),
+                                  valueColor: AlwaysStoppedAnimation(s.color),
                                 ),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              _strengthLabel(s),
+                              s.label,
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: _strengthColor(s),
+                                color: s.color,
                               ),
                             ),
                           ],

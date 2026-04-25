@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
+import 'secure_storage_manager.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -39,8 +39,6 @@ class AuthService {
           .collection('users')
           .doc(credential.user!.uid)
           .set(userModel.toFirestore());
-
-      await credential.user!.sendEmailVerification();
 
       return (user: userModel, error: null);
     } on FirebaseAuthException catch (e) {
@@ -96,29 +94,6 @@ class AuthService {
 
   Future<void> signOut() async {
     await _auth.signOut();
-  }
-
-  Future<({bool success, String? error})> sendPasswordResetEmail(String email) async {
-    try {
-      await _auth.sendPasswordResetEmail(email: email.trim());
-      return (success: true, error: null);
-    } on FirebaseAuthException catch (e) {
-      return (success: false, error: _getErrorMessage(e.code));
-    } catch (e) {
-      return (success: false, error: 'Failed to send reset email. Please try again.');
-    }
-  }
-
-  Future<({bool success, String? error})> resendEmailVerification() async {
-    try {
-      if (currentUser != null) {
-        await currentUser!.sendEmailVerification();
-        return (success: true, error: null);
-      }
-      return (success: false, error: 'No user signed in.');
-    } catch (e) {
-      return (success: false, error: 'Failed to resend verification email. Please try again.');
-    }
   }
 
   bool get isEmailVerified => currentUser?.emailVerified ?? false;
@@ -232,8 +207,6 @@ class AuthService {
 
   // ── Session version (logout all other devices) ────────────────────────────
 
-  static const _kSessionVersionPrefix = 'session_version_';
-
   /// Increments sessionVersion in Firestore and syncs the current device's
   /// local copy so it stays valid while all other sessions are invalidated.
   Future<({bool success, String? error})> logoutAllDevices() async {
@@ -245,11 +218,10 @@ class AuthService {
         'sessionVersion': FieldValue.increment(1),
       });
 
-      final doc = await _firestore.collection('users').doc(uid).get();
+      final doc        = await _firestore.collection('users').doc(uid).get();
       final newVersion = (doc.data()?['sessionVersion'] as int?) ?? 1;
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('$_kSessionVersionPrefix$uid', newVersion);
+      await SecureStorageManager.instance.saveSessionVersion(uid, newVersion);
 
       return (success: true, error: null);
     } catch (e) {
@@ -262,10 +234,9 @@ class AuthService {
     final uid = currentUser?.uid;
     if (uid == null) return;
     try {
-      final doc = await _firestore.collection('users').doc(uid).get();
+      final doc     = await _firestore.collection('users').doc(uid).get();
       final version = (doc.data()?['sessionVersion'] as int?) ?? 0;
-      final prefs   = await SharedPreferences.getInstance();
-      await prefs.setInt('$_kSessionVersionPrefix$uid', version);
+      await SecureStorageManager.instance.saveSessionVersion(uid, version);
     } catch (_) {}
   }
 
@@ -275,8 +246,7 @@ class AuthService {
     final uid = currentUser?.uid;
     if (uid == null) return false;
     try {
-      final prefs        = await SharedPreferences.getInstance();
-      final localVersion = prefs.getInt('$_kSessionVersionPrefix$uid');
+      final localVersion = await SecureStorageManager.instance.getSessionVersion(uid);
       if (localVersion == null) {
         // First launch after install — save and treat as valid.
         await saveLocalSessionVersion();

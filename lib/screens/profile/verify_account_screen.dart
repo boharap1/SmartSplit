@@ -1,8 +1,9 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/otp_service.dart';
 import '../../utils/constants.dart';
+import '../auth/otp_verification_screen.dart';
 
 class VerifyAccountScreen extends StatefulWidget {
   const VerifyAccountScreen({super.key});
@@ -12,78 +13,37 @@ class VerifyAccountScreen extends StatefulWidget {
 }
 
 class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
-  bool   _isSending    = false;
-  bool   _isChecking   = false;
-  int    _countdown    = 0;
-  Timer? _timer;
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
+  bool _isSending = false;
 
   Future<void> _sendVerification() async {
-    if (_isSending || _countdown > 0) return;
+    if (_isSending) return;
     setState(() => _isSending = true);
 
-    final success =
-        await context.read<AuthProvider>().resendEmailVerification();
+    final email =
+        context.read<AuthProvider>().firebaseUser?.email ?? '';
+    final result = await OtpService.instance.requestEmailVerificationOtp();
 
     if (!mounted) return;
     setState(() => _isSending = false);
 
-    if (success) {
-      _startCountdown();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Verification email sent! Check your inbox.'),
-          backgroundColor: AppConstants.successColor,
+    if (result.success) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OtpVerificationScreen(
+            email:   email,
+            purpose: OtpPurpose.emailVerification,
+          ),
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              context.read<AuthProvider>().errorMessage ??
-                  'Failed to send verification email.'),
+          content: Text(result.error ?? 'Failed to send code. Please try again.'),
           backgroundColor: AppConstants.errorColor,
         ),
       );
     }
-  }
-
-  Future<void> _checkStatus() async {
-    if (_isChecking) return;
-    setState(() => _isChecking = true);
-
-    final verified =
-        await context.read<AuthProvider>().checkEmailVerification();
-
-    if (!mounted) return;
-    setState(() => _isChecking = false);
-
-    if (!verified) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Email not verified yet. Please check your inbox and click the link.'),
-          backgroundColor: Color(0xFFFFB300),
-        ),
-      );
-    }
-  }
-
-  void _startCountdown() {
-    _timer?.cancel();
-    setState(() => _countdown = 60);
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
-      setState(() {
-        _countdown--;
-        if (_countdown <= 0) t.cancel();
-      });
-    });
   }
 
   @override
@@ -196,7 +156,7 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'We\'ll send a verification link to:',
+            'We\'ll send a 6-digit code to:',
             style: TextStyle(fontSize: 14, color: Colors.grey[600]),
           ),
           const SizedBox(height: 4),
@@ -209,17 +169,17 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Click the link in the email to verify your account.',
+            'Enter the code in the app to verify your account.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: Colors.grey[500]),
           ),
           const SizedBox(height: 32),
 
-          // Send button
+          // Send code button — navigates to OTP screen on success
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: (_isSending || _countdown > 0) ? null : _sendVerification,
+              onPressed: _isSending ? null : _sendVerification,
               icon: _isSending
                   ? const SizedBox(
                       width: 18,
@@ -229,9 +189,7 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
                     )
                   : const Icon(Icons.send_outlined),
               label: Text(
-                _countdown > 0
-                    ? 'Resend in ${_countdown}s'
-                    : 'Send Verification Email',
+                _isSending ? 'Sending…' : 'Send Verification Code',
                 style: const TextStyle(
                     fontSize: 15, fontWeight: FontWeight.bold),
               ),
@@ -246,38 +204,6 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
                       BorderRadius.circular(AppConstants.borderRadius),
                 ),
                 elevation: 0,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Check status button
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _isChecking ? null : _checkStatus,
-              icon: _isChecking
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          color: AppConstants.primaryColor, strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh_rounded),
-              label: const Text(
-                'I\'ve Verified — Check Status',
-                style:
-                    TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppConstants.primaryColor,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                side: const BorderSide(color: AppConstants.primaryColor),
-                shape: RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.circular(AppConstants.borderRadius),
-                ),
               ),
             ),
           ),
@@ -312,10 +238,10 @@ class _VerifyAccountScreenState extends State<VerifyAccountScreen> {
                     'Check your spam or junk folder if you don\'t see the email.'),
                 const SizedBox(height: 8),
                 _tip(Icons.timer_outlined,
-                    'The link expires after 24 hours. Request a new one if needed.'),
+                    'The code expires after 10 minutes. Request a new one if needed.'),
                 const SizedBox(height: 8),
-                _tip(Icons.phone_android_outlined,
-                    'After clicking the link, return here and tap "Check Status".'),
+                _tip(Icons.dialpad_outlined,
+                    'Enter the 6-digit code in the next screen to activate your account.'),
               ],
             ),
           ),

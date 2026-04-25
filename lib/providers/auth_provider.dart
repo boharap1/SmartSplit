@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/biometric_service.dart';
+import '../services/secure_storage_manager.dart';
 
 enum AuthStatus {
   initial,
@@ -14,20 +16,28 @@ enum AuthStatus {
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
 
-  AuthStatus _status = AuthStatus.initial;
+  AuthStatus _status       = AuthStatus.initial;
   UserModel? _user;
-  String? _errorMessage;
+  String?    _errorMessage;
 
-  // Getters
-  AuthStatus get status => _status;
-  UserModel? get user => _user;
-  String? get errorMessage => _errorMessage;
-  bool get isAuthenticated => _status == AuthStatus.authenticated;
-  bool get isLoading => _status == AuthStatus.loading;
-  bool get isEmailVerified => _authService.isEmailVerified;
-  User? get firebaseUser => _authService.currentUser;
+  // ── Biometric state ───────────────────────────────────────────────────────
+  bool _biometricEnabled  = false;
+  bool _biometricUnlocked = false; // true after successful lock-screen auth
 
-  // Initialize - check if user is already logged in
+  // ── Getters ───────────────────────────────────────────────────────────────
+
+  AuthStatus get status          => _status;
+  UserModel? get user            => _user;
+  String?    get errorMessage    => _errorMessage;
+  bool get isAuthenticated       => _status == AuthStatus.authenticated;
+  bool get isLoading             => _status == AuthStatus.loading;
+  bool get isEmailVerified       => _authService.isEmailVerified;
+  User?      get firebaseUser    => _authService.currentUser;
+  bool get biometricEnabled      => _biometricEnabled;
+  bool get biometricUnlocked     => _biometricUnlocked;
+
+  // ── Initialise ────────────────────────────────────────────────────────────
+
   Future<void> initialize() async {
     _status = AuthStatus.loading;
     notifyListeners();
@@ -35,30 +45,58 @@ class AuthProvider extends ChangeNotifier {
     try {
       final currentUser = _authService.currentUser;
       if (currentUser != null) {
-        // Check session validity (logout-all-devices support)
-        final sessionValid = await _authService.isSessionValid();
-        if (!sessionValid) {
-          await _authService.signOut();
-          _status = AuthStatus.unauthenticated;
-          notifyListeners();
-          return;
-        }
         _user = await _authService.getUserData(currentUser.uid);
         if (_user != null) {
           _status = AuthStatus.authenticated;
+          await _loadBiometricPreference();
+          // biometricUnlocked stays false — lock screen will prompt.
         } else {
           _status = AuthStatus.unauthenticated;
         }
       } else {
         _status = AuthStatus.unauthenticated;
       }
-    } catch (e) {
+    } catch (_) {
       _status = AuthStatus.unauthenticated;
     }
     notifyListeners();
   }
 
-  // Register
+  // ── Biometric ─────────────────────────────────────────────────────────────
+
+  Future<void> _loadBiometricPreference() async {
+    _biometricEnabled =
+        await SecureStorageManager.instance.isBiometricEnabled();
+  }
+
+  /// Called by BiometricLockScreen after a successful OS-level auth.
+  void unlockBiometric() {
+    _biometricUnlocked = true;
+    notifyListeners();
+  }
+
+  /// Toggle biometric lock on/off. Triggers OS prompt before enabling to
+  /// confirm the device owner is the one turning it on.
+  Future<bool> setBiometricEnabled({required bool value}) async {
+    if (value) {
+      final available = await BiometricService.instance.isAvailable();
+      if (!available) return false;
+
+      final result = await BiometricService.instance.authenticate(
+        reason: 'Confirm your identity to enable biometric lock',
+      );
+      if (result != BiometricResult.success) return false;
+    }
+
+    await SecureStorageManager.instance.setBiometricEnabled(value: value);
+    _biometricEnabled = value;
+    if (value) _biometricUnlocked = true; // already authenticated above
+    notifyListeners();
+    return true;
+  }
+
+  // ── Register ──────────────────────────────────────────────────────────────
+
   Future<bool> register({
     required String name,
     required String email,
@@ -75,20 +113,22 @@ class AuthProvider extends ChangeNotifier {
     );
 
     if (result.user != null) {
-      _user = result.user;
+      _user   = result.user;
       _status = AuthStatus.authenticated;
-      await _authService.saveLocalSessionVersion();
+      _biometricUnlocked = true; // new account — no lock needed on first open
+      await SecureStorageManager.instance.saveLastEmail(email);
       notifyListeners();
       return true;
     } else {
       _errorMessage = result.error;
-      _status = AuthStatus.error;
+      _status       = AuthStatus.error;
       notifyListeners();
       return false;
     }
   }
 
-  // Sign In
+  // ── Sign In ───────────────────────────────────────────────────────────────
+
   Future<bool> signIn({
     required String email,
     required String password,
@@ -103,67 +143,53 @@ class AuthProvider extends ChangeNotifier {
     );
 
     if (result.user != null) {
-      _user = result.user;
+      _user   = result.user;
       _status = AuthStatus.authenticated;
-      await _authService.saveLocalSessionVersion();
+      _biometricUnlocked = true; // just authenticated manually — no lock
+      await SecureStorageManager.instance.saveLastEmail(email);
+      await _loadBiometricPreference();
       notifyListeners();
       return true;
     } else {
       _errorMessage = result.error;
-      _status = AuthStatus.error;
+      _status       = AuthStatus.error;
       notifyListeners();
       return false;
     }
   }
 
-  // Sign Out
+  // ── Sign Out ──────────────────────────────────────────────────────────────
+
   Future<void> signOut() async {
     _status = AuthStatus.loading;
     notifyListeners();
 
+    final uid = _user?.uid ?? firebaseUser?.uid;
     await _authService.signOut();
+    if (uid != null) {
+      await SecureStorageManager.instance.clearSessionData(uid);
+    } else {
+      await SecureStorageManager.instance.clearAll();
+    }
 
-    _user = null;
-    _status = AuthStatus.unauthenticated;
-    _errorMessage = null;
+    _user              = null;
+    _status            = AuthStatus.unauthenticated;
+    _errorMessage      = null;
+    _biometricEnabled  = false;
+    _biometricUnlocked = false;
     notifyListeners();
   }
 
-  // Send Password Reset Email
-  Future<bool> sendPasswordResetEmail(String email) async {
-    _errorMessage = null;
-    notifyListeners();
+  // ── Email verification ────────────────────────────────────────────────────
 
-    final result = await _authService.sendPasswordResetEmail(email);
-
-    if (!result.success) {
-      _errorMessage = result.error;
-      notifyListeners();
-    }
-
-    return result.success;
-  }
-
-  // Resend Email Verification
-  Future<bool> resendEmailVerification() async {
-    final result = await _authService.resendEmailVerification();
-
-    if (!result.success) {
-      _errorMessage = result.error;
-      notifyListeners();
-    }
-
-    return result.success;
-  }
-
-  // Check Email Verification Status
   Future<bool> checkEmailVerification() async {
     await _authService.reloadUser();
     notifyListeners();
     return isEmailVerified;
   }
 
-  // Update Profile — pass null to leave a field unchanged, '' to clear it
+  // ── Profile ───────────────────────────────────────────────────────────────
+
   Future<bool> updateProfile({
     String? name,
     String? phoneNumber,
@@ -175,21 +201,21 @@ class AuthProvider extends ChangeNotifier {
     if (uid == null) return false;
 
     final result = await _authService.updateProfile(
-      uid: uid,
-      name: name,
-      phoneNumber: phoneNumber,
+      uid:            uid,
+      name:           name,
+      phoneNumber:    phoneNumber,
       profilePicture: profilePicture,
-      dob: dob,
-      gender: gender,
+      dob:            dob,
+      gender:         gender,
     );
 
     if (result.success) {
       _user = _user?.copyWith(
-        name: name,
-        phoneNumber: phoneNumber,
+        name:           name,
+        phoneNumber:    phoneNumber,
         profilePicture: profilePicture,
-        dob: dob,
-        gender: gender,
+        dob:            dob,
+        gender:         gender,
       );
       _errorMessage = null;
     } else {
@@ -199,7 +225,16 @@ class AuthProvider extends ChangeNotifier {
     return result.success;
   }
 
-  // Change Password
+  Future<void> refreshProfile() async {
+    final fresh = await _authService.refreshUserData();
+    if (fresh != null) {
+      _user = fresh;
+      notifyListeners();
+    }
+  }
+
+  // ── Password management ───────────────────────────────────────────────────
+
   Future<bool> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -216,13 +251,17 @@ class AuthProvider extends ChangeNotifier {
     return result.success;
   }
 
-  // Delete Account — signs out automatically on success
+  // ── Account deletion ──────────────────────────────────────────────────────
+
   Future<bool> deleteAccount({required String password}) async {
     _errorMessage = null;
     final result = await _authService.deleteAccount(password: password);
     if (result.success) {
-      _user   = null;
-      _status = AuthStatus.unauthenticated;
+      await SecureStorageManager.instance.clearAll();
+      _user              = null;
+      _status            = AuthStatus.unauthenticated;
+      _biometricEnabled  = false;
+      _biometricUnlocked = false;
     } else {
       _errorMessage = result.error;
     }
@@ -230,7 +269,8 @@ class AuthProvider extends ChangeNotifier {
     return result.success;
   }
 
-  // Logout from all other devices
+  // ── Multi-device logout ───────────────────────────────────────────────────
+
   Future<bool> logoutAllDevices() async {
     _errorMessage = null;
     final result = await _authService.logoutAllDevices();
@@ -241,21 +281,11 @@ class AuthProvider extends ChangeNotifier {
     return result.success;
   }
 
-  // Re-fetch latest profile data from Firestore
-  Future<void> refreshProfile() async {
-    final fresh = await _authService.refreshUserData();
-    if (fresh != null) {
-      _user = fresh;
-      notifyListeners();
-    }
-  }
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
-  // Clear Error
   void clearError() {
     _errorMessage = null;
-    if (_status == AuthStatus.error) {
-      _status = AuthStatus.unauthenticated;
-    }
+    if (_status == AuthStatus.error) _status = AuthStatus.unauthenticated;
     notifyListeners();
   }
 }
