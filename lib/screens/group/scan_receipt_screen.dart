@@ -13,10 +13,15 @@ class ScanReceiptScreen extends StatefulWidget {
   final GroupModel group;
   final String currentUserId;
 
+  /// When set, the image picker launches immediately for this source on open,
+  /// skipping the manual "Select Receipt Image" button tap.
+  final ImageSource? initialSource;
+
   const ScanReceiptScreen({
     super.key,
     required this.group,
     required this.currentUserId,
+    this.initialSource,
   });
 
   @override
@@ -31,6 +36,16 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
   ScannedReceiptData? _scannedData;
   bool _isScanning = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSource != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _pickImage(widget.initialSource!),
+      );
+    }
+  }
 
   @override
   void dispose() {

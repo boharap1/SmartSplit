@@ -6,17 +6,29 @@ import '../models/notification_model.dart';
 import '../services/notification_service.dart';
 
 class NotificationProvider extends ChangeNotifier {
-  static const _kEnabled = 'notifications_enabled';
+  static const _kPushEnabled = 'push_notifications_enabled';
+  static const _kEmailEnabled = 'email_notifications_enabled';
   static final _db = FirebaseFirestore.instance;
 
   List<NotificationModel> _items = [];
-  bool _enabled = true;
+  // In-app (Notification Centre) is always on — not user-controllable.
+  bool _pushEnabled = true;
+  bool _emailEnabled = false;
   String? _userId;
   StreamSubscription<QuerySnapshot>? _sub;
   bool _initialLoadDone = false;
 
   List<NotificationModel> get notifications => List.unmodifiable(_items);
-  bool get enabled => _enabled;
+
+  /// Whether device heads-up (local + FCM push) notifications are enabled.
+  bool get pushEnabled => _pushEnabled;
+
+  /// Whether the user wants email notifications (stored for backend use).
+  bool get emailEnabled => _emailEnabled;
+
+  // Legacy alias — some widgets still read `.enabled` for the push toggle.
+  bool get enabled => _pushEnabled;
+
   int get unreadCount => _items.where((n) => !n.isRead).length;
   bool get hasUnread => _items.any((n) => !n.isRead);
 
@@ -28,10 +40,11 @@ class NotificationProvider extends ChangeNotifier {
     _userId = userId;
 
     final prefs = await SharedPreferences.getInstance();
-    _enabled = prefs.getBool(_kEnabled) ?? true;
+    _pushEnabled = prefs.getBool(_kPushEnabled) ?? true;
+    _emailEnabled = prefs.getBool(_kEmailEnabled) ?? false;
     notifyListeners();
 
-    await NotificationService.instance.init(userId: userId, enabled: _enabled);
+    await NotificationService.instance.init(userId: userId, enabled: _pushEnabled);
     _startStream(userId);
   }
 
@@ -60,18 +73,17 @@ class NotificationProvider extends ChangeNotifier {
         return;
       }
 
-      // Show heads-up local notification only for newly arriving docs.
-      if (_enabled) {
-        for (final change in snapshot.docChanges) {
-          if (change.type == DocumentChangeType.added) {
-            final n = NotificationModel.fromFirestore(change.doc);
-            if (!n.isRead) {
-              NotificationService.instance.showLocal(
-                title: n.title,
-                body: n.body,
-                payload: n.groupId,
-              );
-            }
+      // Show heads-up local notification for newly arriving docs.
+      // Critical notifications fire regardless of the push preference.
+      for (final change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added) {
+          final n = NotificationModel.fromFirestore(change.doc);
+          if (!n.isRead && (_pushEnabled || n.isCritical)) {
+            NotificationService.instance.showLocal(
+              title: n.title,
+              body: n.body,
+              payload: n.groupId,
+            );
           }
         }
       }
@@ -80,17 +92,17 @@ class NotificationProvider extends ChangeNotifier {
 
   // ── Toggle on / off ───────────────────────────────────────────────────────
 
-  Future<void> setEnabled({required bool value}) async {
-    if (_userId == null || _enabled == value) return;
-    _enabled = value;
+  Future<void> setPushEnabled({required bool value}) async {
+    if (_userId == null || _pushEnabled == value) return;
+    _pushEnabled = value;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kEnabled, value);
+    await prefs.setBool(_kPushEnabled, value);
 
     try {
       await _db
           .collection('users')
           .doc(_userId)
-          .update({'notificationsEnabled': value});
+          .update({'pushNotificationsEnabled': value});
     } catch (_) {}
 
     if (!value) {
@@ -100,6 +112,25 @@ class NotificationProvider extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  Future<void> setEmailEnabled({required bool value}) async {
+    if (_emailEnabled == value) return;
+    _emailEnabled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kEmailEnabled, value);
+
+    try {
+      await _db
+          .collection('users')
+          .doc(_userId)
+          .update({'emailNotificationsEnabled': value});
+    } catch (_) {}
+
+    notifyListeners();
+  }
+
+  // Legacy alias kept for app_menu.dart compatibility.
+  Future<void> setEnabled({required bool value}) => setPushEnabled(value: value);
 
   // ── Mark read ─────────────────────────────────────────────────────────────
 

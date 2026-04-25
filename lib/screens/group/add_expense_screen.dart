@@ -249,12 +249,12 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: AppConstants.successColor.withOpacity(0.1),
+                          color: AppConstants.successColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(
                             AppConstants.borderRadius,
                           ),
                           border: Border.all(
-                            color: AppConstants.successColor.withOpacity(0.4),
+                            color: AppConstants.successColor.withValues(alpha: 0.4),
                           ),
                         ),
                         child: const Row(
@@ -355,7 +355,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     const SizedBox(height: 16),
 
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       decoration: BoxDecoration(
                         color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(
@@ -411,6 +411,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                             groupValue: _selectedPayer,
                             title: Text(_getMemberName(memberId)),
                             activeColor: AppConstants.primaryColor,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                             onChanged: (value) {
                               setState(() => _selectedPayer = value);
                             },
@@ -470,6 +471,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                             value: isSelected,
                             title: Text(_getMemberName(memberId)),
                             activeColor: AppConstants.primaryColor,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                             onChanged: (value) {
                               setState(() {
                                 if (value == true) {
@@ -497,7 +499,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                           return Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: AppConstants.primaryColor.withOpacity(0.1),
+                              color: AppConstants.primaryColor.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(
                                 AppConstants.borderRadius,
                               ),

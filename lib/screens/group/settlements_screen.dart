@@ -9,7 +9,9 @@ import '../../models/bank_details_model.dart';
 import '../../services/settlement_service.dart';
 import '../../services/settlement_algorithm.dart';
 import '../../utils/constants.dart';
+import '../../models/notification_model.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/notification_dispatcher.dart';
 import '../profile/bank_details_screen.dart';
 
 class SettlementsScreen extends StatefulWidget {
@@ -128,8 +130,9 @@ class _SettlementsScreenState extends State<SettlementsScreen>
   }
 
   Future<void> _showPaymentRequestSheet(OptimizedSettlement settlement) async {
-    final payerName = _getMemberName(settlement.fromUserId);
-    final myBankDetails = _bankDetailsCache[widget.currentUserId];
+    final payerName      = _getMemberName(settlement.fromUserId);
+    final myName         = _getMemberName(widget.currentUserId);
+    final myBankDetails  = _bankDetailsCache[widget.currentUserId];
 
     await showModalBottomSheet(
       context: context,
@@ -138,9 +141,11 @@ class _SettlementsScreenState extends State<SettlementsScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => _PaymentRequestSheet(
-        settlement: settlement,
-        payerName: payerName,
-        myBankDetails: myBankDetails,
+        settlement:      settlement,
+        payerName:       payerName,
+        myName:          myName,
+        groupId:         widget.group.groupId,
+        myBankDetails:   myBankDetails,
         onAddBankDetails: () {
           Navigator.pop(context);
           _navigateToBankDetails();
@@ -836,7 +841,7 @@ class _SettlementsScreenState extends State<SettlementsScreen>
                         backgroundColor: AppConstants.primaryColor,
                         foregroundColor: Colors.white,
                       ),
-                      child: const Text('I Paid This'),
+                      child: const Text('Pay Now'),
                     ),
                   )
                 else
@@ -1190,25 +1195,45 @@ Amount: $cs${widget.settlement.amount.toStringAsFixed(2)}
               // Confirm button
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pop(context, {
-                    'confirmed': true,
-                    'paymentMethod': _paymentMethod,
-                    'paymentReference': _referenceController.text.isNotEmpty
-                        ? _referenceController.text
-                        : null,
-                    'note': _noteController.text.isNotEmpty
-                        ? _noteController.text
-                        : null,
-                  });
+                  if (_paymentMethod == 'cash') {
+                    Navigator.pop(context, {
+                      'confirmed': true,
+                      'paymentMethod': _paymentMethod,
+                      'paymentReference': _referenceController.text.isNotEmpty
+                          ? _referenceController.text
+                          : null,
+                      'note': _noteController.text.isNotEmpty
+                          ? _noteController.text
+                          : null,
+                    });
+                  } else {
+                    // Bank transfer / other — cannot be auto-confirmed in-app.
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Please complete the transfer externally. '
+                          'Only cash payments can be marked as settled here.',
+                        ),
+                        backgroundColor: Colors.orange,
+                        duration: Duration(seconds: 4),
+                      ),
+                    );
+                  }
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppConstants.primaryColor,
+                  backgroundColor: _paymentMethod == 'cash'
+                      ? AppConstants.primaryColor
+                      : Colors.orange,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                child: const Text(
-                  'Confirm Payment',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                child: Text(
+                  _paymentMethod == 'cash'
+                      ? 'Confirm Cash Payment'
+                      : 'Got It — I\'ll Transfer Externally',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1259,37 +1284,78 @@ Amount: $cs${widget.settlement.amount.toStringAsFixed(2)}
 }
 
 /// Bottom sheet shown to the receiver of a payment so they can share their
-/// bank details or copy a ready-made payment request message for the payer.
-class _PaymentRequestSheet extends StatelessWidget {
+/// bank details, copy a payment request message, or send a critical in-app
+/// notification to the payer (bypasses the payer's notification preferences).
+class _PaymentRequestSheet extends StatefulWidget {
   final OptimizedSettlement settlement;
   final String payerName;
+  final String myName;
+  final String groupId;
   final BankDetails? myBankDetails;
   final VoidCallback onAddBankDetails;
 
   const _PaymentRequestSheet({
     required this.settlement,
     required this.payerName,
+    required this.myName,
+    required this.groupId,
     required this.myBankDetails,
     required this.onAddBankDetails,
   });
 
+  @override
+  State<_PaymentRequestSheet> createState() => _PaymentRequestSheetState();
+}
+
+class _PaymentRequestSheetState extends State<_PaymentRequestSheet> {
+  bool _isSending = false;
+  bool _notified  = false;
+
+  Future<void> _notifyPayer() async {
+    if (_isSending || _notified) return;
+    setState(() => _isSending = true);
+
+    await NotificationDispatcher.instance.dispatchCritical(
+      DispatchPayload(
+        title:            'Payment reminder',
+        body:             '${widget.myName} is requesting '
+                          '£${widget.settlement.amount.toStringAsFixed(2)} from you.',
+        recipientUserIds: [widget.settlement.fromUserId],
+        type:             NotificationType.paymentReminder,
+        priority:         NotificationPriority.critical,
+        groupId:          widget.groupId,
+        fromUserName:     widget.myName,
+      ),
+    );
+
+    if (mounted) {
+      setState(() { _isSending = false; _notified = true; });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.payerName} has been notified.'),
+          backgroundColor: AppConstants.successColor,
+        ),
+      );
+    }
+  }
+
   void _copyRequest(BuildContext context) {
-    final bank = myBankDetails;
-    final cs = context.read<SettingsProvider>().currencySymbol;
+    final bank = widget.myBankDetails;
+    final cs   = context.read<SettingsProvider>().currencySymbol;
     final String message;
 
     if (bank != null && bank.isComplete) {
       message =
-          'Hi $payerName, could you please send me '
-          '$cs${settlement.amount.toStringAsFixed(2)}?\n\n'
+          'Hi ${widget.payerName}, could you please send me '
+          '$cs${widget.settlement.amount.toStringAsFixed(2)}?\n\n'
           'Account holder: ${bank.accountHolderName}\n'
           'Bank: ${bank.bankName}\n'
           'Sort code: ${bank.formattedSortCode}\n'
           'Account number: ${bank.accountNumber}';
     } else {
       message =
-          'Hi $payerName, could you please send me '
-          '$cs${settlement.amount.toStringAsFixed(2)}? Thanks!';
+          'Hi ${widget.payerName}, could you please send me '
+          '$cs${widget.settlement.amount.toStringAsFixed(2)}? Thanks!';
     }
 
     Clipboard.setData(ClipboardData(text: message));
@@ -1303,7 +1369,8 @@ class _PaymentRequestSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bank = myBankDetails;
+    final bank = widget.myBankDetails;
+    final cs   = context.watch<SettingsProvider>().currencySymbol;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1344,12 +1411,12 @@ class _PaymentRequestSheet extends StatelessWidget {
                 child: Column(
                   children: [
                     Text(
-                      '$payerName owes you',
+                      '${widget.payerName} owes you',
                       style: const TextStyle(fontSize: 16),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${context.watch<SettingsProvider>().currencySymbol}${settlement.amount.toStringAsFixed(2)}',
+                      '$cs${widget.settlement.amount.toStringAsFixed(2)}',
                       style: const TextStyle(
                         fontSize: 36,
                         fontWeight: FontWeight.bold,
@@ -1402,7 +1469,7 @@ class _PaymentRequestSheet extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Add your bank details so $payerName knows where to send the money.',
+                          'Add your bank details so ${widget.payerName} knows where to send the money.',
                           style: TextStyle(color: Colors.grey[700]),
                         ),
                       ),
@@ -1411,11 +1478,44 @@ class _PaymentRequestSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 OutlinedButton(
-                  onPressed: onAddBankDetails,
+                  onPressed: widget.onAddBankDetails,
                   child: const Text('Add Bank Details'),
                 ),
                 const SizedBox(height: 16),
               ],
+
+              // Notify button — dispatches a critical notification to the payer,
+              // bypassing their push/email preference settings.
+              OutlinedButton.icon(
+                onPressed: (_isSending || _notified) ? null : _notifyPayer,
+                icon: _isSending
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        _notified
+                            ? Icons.check_circle_outline
+                            : Icons.notifications_active_outlined,
+                        size: 18,
+                      ),
+                label: Text(
+                  _notified
+                      ? 'Notified ${widget.payerName}'
+                      : 'Notify ${widget.payerName}',
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _notified ? Colors.grey : AppConstants.primaryColor,
+                  side: BorderSide(
+                    color: _notified
+                        ? Colors.grey.withValues(alpha: 0.4)
+                        : AppConstants.primaryColor,
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 12),
 
               ElevatedButton.icon(
                 onPressed: () => _copyRequest(context),

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/bank_details_model.dart';
 import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
+import '../settings/notification_preferences_screen.dart';
 import 'bank_details_screen.dart';
 import 'edit_profile_screen.dart';
 import 'personal_information_screen.dart';
@@ -262,7 +264,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const Color(0xFFFF7043),
                       'Notifications',
                       'Manage preferences',
-                      () {},
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const NotificationPreferencesScreen(),
+                        ),
+                      ),
                     ),
                   ]),
                   const SizedBox(height: 20),
@@ -290,7 +298,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const Color(0xFF42A5F5),
                       'Contact Us',
                       'Get in touch',
-                      () {},
+                      () => _showContactSheet(context),
                     ),
                     _div(),
                     _menuItem(
@@ -425,6 +433,115 @@ class _ProfileScreenState extends State<ProfileScreen> {
     padding: const EdgeInsets.only(left: 70),
     child: Divider(height: 1, color: Colors.grey[100]),
   );
+
+  void _showContactSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Contact Us',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'We\'d love to hear from you.',
+                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 20),
+              _contactTile(
+                icon: Icons.mail_outline_rounded,
+                color: const Color(0xFF42A5F5),
+                title: 'Email',
+                subtitle: 'boharaprakash4444@gmail.com',
+                onTap: () => launchUrl(
+                  Uri.parse('mailto:boharaprakash4444@gmail.com'
+                      '?subject=SmartSplit%20Feedback'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _contactTile(
+                icon: Icons.phone_outlined,
+                color: AppConstants.successColor,
+                title: 'Phone',
+                subtitle: '+44 7901 327589',
+                onTap: () => launchUrl(Uri.parse('tel:+447901327589')),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _contactTile({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(subtitle,
+                      style:
+                          TextStyle(fontSize: 14, color: Colors.grey[600])),
+                ],
+              ),
+            ),
+            Icon(Icons.open_in_new_rounded, size: 16, color: color),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _navigateToEditProfile() async {
     await Navigator.push(

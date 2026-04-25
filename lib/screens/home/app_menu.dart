@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/settlement_service.dart';
@@ -12,7 +13,7 @@ import '../settings/language_screen.dart';
 import '../settings/time_zone_screen.dart';
 import '../settings/currency_screen.dart';
 import '../settings/password_security_screen.dart';
-import '../../providers/notification_provider.dart';
+import '../settings/notification_preferences_screen.dart';
 import '../../providers/settings_provider.dart';
 
 /// Opens the full-height slide-in app menu from the left edge.
@@ -303,14 +304,121 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
     );
   }
 
+  void _showContactSheet() {
+    _close();
+    showModalBottomSheet(
+      context: widget.parentContext,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Contact Us',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "We'd love to hear from you.",
+                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 20),
+              _contactTile(
+                icon: Icons.mail_outline_rounded,
+                color: const Color(0xFF42A5F5),
+                title: 'Email',
+                subtitle: 'boharaprakash4444@gmail.com',
+                onTap: () => launchUrl(Uri.parse(
+                    'mailto:boharaprakash4444@gmail.com'
+                    '?subject=SmartSplit%20Feedback')),
+              ),
+              const SizedBox(height: 12),
+              _contactTile(
+                icon: Icons.phone_outlined,
+                color: AppConstants.successColor,
+                title: 'Phone',
+                subtitle: '+44 7901 327589',
+                onTap: () => launchUrl(Uri.parse('tel:+447901327589')),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _contactTile({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(subtitle,
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                ],
+              ),
+            ),
+            Icon(Icons.open_in_new_rounded, size: 16, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final user          = context.watch<AuthProvider>().user;
-    final settings      = context.watch<SettingsProvider>();
-    final notifications = context.watch<NotificationProvider>();
-    final cs            = Theme.of(context).colorScheme;
+    final user     = context.watch<AuthProvider>().user;
+    final settings = context.watch<SettingsProvider>();
+    final cs       = Theme.of(context).colorScheme;
     final width         = MediaQuery.of(context).size.width * 0.82;
 
     return Material(
@@ -414,14 +522,12 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                     onChanged: (_) => settings.toggleTheme(),
                   ),
 
-                  // ── Notifications toggle ──────────────────────────────────
-                  _toggleTile(
+                  // ── Notifications ─────────────────────────────────────────
+                  _tile(
                     icon: Icons.notifications_outlined,
                     iconColor: const Color(0xFFAB47BC),
                     label: 'Notifications',
-                    value: notifications.enabled,
-                    onChanged: (_) => notifications.setEnabled(
-                        value: !notifications.enabled),
+                    onTap: () => _navigateTo(const NotificationPreferencesScreen()),
                   ),
 
                   _divider(),
@@ -439,7 +545,7 @@ class _AppMenuPanelState extends State<_AppMenuPanel> {
                     icon: Icons.mail_outline_rounded,
                     iconColor: const Color(0xFF26A69A),
                     label: 'Contact Us',
-                    onTap: () => _soon('Contact Us'),
+                    onTap: _showContactSheet,
                   ),
 
                   // ── About ────────────────────────────────────────────────

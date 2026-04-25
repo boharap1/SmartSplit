@@ -266,6 +266,8 @@ class _NotificationTile extends StatelessWidget {
         return Icons.person_remove_rounded;
       case NotificationType.reminder:
         return Icons.alarm_rounded;
+      case NotificationType.paymentReminder:
+        return Icons.notifications_active_rounded;
       case NotificationType.system:
         return Icons.info_outline_rounded;
     }
@@ -285,6 +287,8 @@ class _NotificationTile extends StatelessWidget {
         return const Color(0xFFFF7043);
       case NotificationType.reminder:
         return const Color(0xFFFFB300);
+      case NotificationType.paymentReminder:
+        return AppConstants.successColor;
       case NotificationType.system:
         return const Color(0xFF78909C);
     }

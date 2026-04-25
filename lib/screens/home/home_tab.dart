@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/auth_provider.dart';
@@ -389,6 +390,68 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
+  Future<ImageSource?> _pickScanSource() {
+    final completer = Completer<ImageSource?>();
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Select Image Source',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppConstants.primaryColor,
+                  child: Icon(Icons.camera_alt, color: Colors.white),
+                ),
+                title: const Text('Camera'),
+                subtitle: const Text('Take a photo of the receipt'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  completer.complete(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.grey[600],
+                  child: const Icon(Icons.photo_library, color: Colors.white),
+                ),
+                title: const Text('Gallery'),
+                subtitle: const Text('Choose from your photos'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  completer.complete(ImageSource.gallery);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      if (!completer.isCompleted) completer.complete(null);
+    });
+    return completer.future;
+  }
+
   Future<void> _handleScanReceipt() async {
     final groups = context.read<GroupProvider>().groups;
     final userId = context.read<AuthProvider>().firebaseUser?.uid ?? '';
@@ -398,13 +461,25 @@ class _HomeTabState extends State<HomeTab> {
     }
 
     Future<void> launchScan(GroupModel g) async {
+      final source = await _pickScanSource();
+      if (source == null || !mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       final groupName = await Navigator.push<String>(
         context,
         MaterialPageRoute(
-          builder: (_) => ScanReceiptScreen(group: g, currentUserId: userId),
+          builder: (_) => ScanReceiptScreen(
+            group: g,
+            currentUserId: userId,
+            initialSource: source,
+          ),
         ),
       );
-      if (groupName != null && mounted) _showExpenseAddedSnackBar(groupName);
+      if (groupName != null && mounted) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('Expense added to "$groupName" successfully!'),
+          backgroundColor: AppConstants.successColor,
+        ));
+      }
     }
 
     if (groups.length == 1) {
@@ -465,17 +540,26 @@ class _HomeTabState extends State<HomeTab> {
                 title: const Text('Scan Receipt'),
                 subtitle: const Text('Use OCR to extract data'),
                 onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(ctx);
+                  final source = await _pickScanSource();
+                  if (source == null || !mounted) return;
                   final groupName = await Navigator.push<String>(
                     context,
                     MaterialPageRoute(
                       builder: (_) => ScanReceiptScreen(
                         group: group,
                         currentUserId: userId,
+                        initialSource: source,
                       ),
                     ),
                   );
-                  if (groupName != null && mounted) _showExpenseAddedSnackBar(groupName);
+                  if (groupName != null && mounted) {
+                    messenger.showSnackBar(SnackBar(
+                      content: Text('Expense added to "$groupName" successfully!'),
+                      backgroundColor: AppConstants.successColor,
+                    ));
+                  }
                 },
               ),
               ListTile(
@@ -486,6 +570,7 @@ class _HomeTabState extends State<HomeTab> {
                 title: const Text('Manual Entry'),
                 subtitle: const Text('Enter details manually'),
                 onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(ctx);
                   final groupName = await Navigator.push<String>(
                     context,
@@ -494,7 +579,12 @@ class _HomeTabState extends State<HomeTab> {
                           AddExpenseScreen(group: group, currentUserId: userId),
                     ),
                   );
-                  if (groupName != null && mounted) _showExpenseAddedSnackBar(groupName);
+                  if (groupName != null && mounted) {
+                    messenger.showSnackBar(SnackBar(
+                      content: Text('Expense added to "$groupName" successfully!'),
+                      backgroundColor: AppConstants.successColor,
+                    ));
+                  }
                 },
               ),
               const SizedBox(height: 10),
@@ -505,42 +595,31 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  void _showExpenseAddedSnackBar(String groupName) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Expense added to "$groupName" successfully!'),
-        backgroundColor: AppConstants.successColor,
-      ),
-    );
-  }
-
   Future<void> _handleCreateGroup() async {
+    final messenger = ScaffoldMessenger.of(context);
     final groupName = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (_) => const CreateGroupScreen()),
     );
     if (groupName != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Group "$groupName" created successfully!'),
-          backgroundColor: AppConstants.successColor,
-        ),
-      );
+      messenger.showSnackBar(SnackBar(
+        content: Text('Group "$groupName" created successfully!'),
+        backgroundColor: AppConstants.successColor,
+      ));
     }
   }
 
   Future<void> _handleJoinGroup() async {
+    final messenger = ScaffoldMessenger.of(context);
     final groupName = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (_) => const JoinGroupScreen()),
     );
     if (groupName != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Joined "$groupName" successfully!'),
-          backgroundColor: AppConstants.successColor,
-        ),
-      );
+      messenger.showSnackBar(SnackBar(
+        content: Text('Joined "$groupName" successfully!'),
+        backgroundColor: AppConstants.successColor,
+      ));
     }
   }
 
@@ -555,59 +634,68 @@ class _HomeTabState extends State<HomeTab> {
     final groups = context.read<GroupProvider>().groups;
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              ...groups.map(
-                (g) => ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppConstants.primaryColor.withValues(
-                      alpha: 0.1,
+      builder: (ctx) {
+        final maxH = MediaQuery.of(ctx).size.height * 0.6;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
-                    child: Text(
-                      g.groupName[0].toUpperCase(),
+                    const SizedBox(height: 16),
+                    Text(
+                      title,
                       style: const TextStyle(
-                        color: AppConstants.primaryColor,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                  title: Text(g.groupName),
-                  subtitle: Text('${g.memberCount} members'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    onPick(g);
-                  },
+                    const SizedBox(height: 12),
+                    ...groups.map(
+                      (g) => ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppConstants.primaryColor.withValues(
+                            alpha: 0.1,
+                          ),
+                          child: Text(
+                            g.groupName[0].toUpperCase(),
+                            style: const TextStyle(
+                              color: AppConstants.primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        title: Text(g.groupName),
+                        subtitle: Text('${g.memberCount} members'),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          onPick(g);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

@@ -187,10 +187,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         children: [
           // Period toggle buttons
           Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+              color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -256,8 +256,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           child: Text(
             label,
             textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               color: isSelected ? AppConstants.primaryColor : Colors.white,
             ),
@@ -313,7 +314,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: AppConstants.primaryColor.withOpacity(0.1),
+                color: AppConstants.primaryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
@@ -385,7 +386,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -397,7 +398,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 24),
@@ -448,7 +449,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -458,18 +459,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.pie_chart, color: AppConstants.primaryColor, size: 24),
-                  SizedBox(width: 8),
-                  Text(
-                    'Spending by Category',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              const Icon(Icons.pie_chart, color: AppConstants.primaryColor, size: 24),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Spending by Category',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -533,6 +533,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     child: Text(
                       category.category,
                       style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
                   Text(
@@ -556,7 +558,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     width: 50,
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: _categoryColors[index % _categoryColors.length].withOpacity(0.15),
+                      color: _categoryColors[index % _categoryColors.length].withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -623,13 +625,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           end: Alignment.bottomRight,
           colors: [
             Colors.white,
-            AppConstants.primaryColor.withOpacity(0.05),
+            AppConstants.primaryColor.withValues(alpha: 0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -639,22 +641,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.bar_chart, color: AppConstants.primaryColor, size: 24),
-                  SizedBox(width: 8),
-                  Text(
-                    'Monthly Trend',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              const Icon(Icons.bar_chart, color: AppConstants.primaryColor, size: 24),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Monthly Trend',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppConstants.primaryColor.withOpacity(0.1),
+                  color: AppConstants.primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -706,7 +707,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           TextSpan(
                             text: '\n${monthly.expenseCount} expense${monthly.expenseCount != 1 ? 's' : ''}',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
+                              color: Colors.white.withValues(alpha: 0.8),
                               fontSize: 11,
                             ),
                           ),
@@ -747,7 +748,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           ),
                         );
                       },
-                      reservedSize: 40,
+                      reservedSize: 48,
                     ),
                   ),
                   leftTitles: AxisTitles(
@@ -776,7 +777,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   horizontalInterval: maxAmount / 4,
                   getDrawingHorizontalLine: (value) {
                     return FlLine(
-                      color: Colors.grey.withOpacity(0.15),
+                      color: Colors.grey.withValues(alpha: 0.15),
                       strokeWidth: 1,
                       dashArray: [5, 5],
                     );
@@ -800,8 +801,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                   AppConstants.secondaryColor,
                                 ]
                               : [
-                                  AppConstants.primaryColor.withOpacity(0.7),
-                                  AppConstants.primaryColor.withOpacity(0.9),
+                                  AppConstants.primaryColor.withValues(alpha: 0.7),
+                                  AppConstants.primaryColor.withValues(alpha: 0.9),
                                 ],
                         ),
                         width: 24,
@@ -854,7 +855,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -864,18 +865,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.people, color: AppConstants.primaryColor, size: 24),
-                  SizedBox(width: 8),
-                  Text(
-                    'Member Contributions',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ],
+              const Icon(Icons.people, color: AppConstants.primaryColor, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Member Contributions',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -920,11 +920,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: index == 0
-                    ? AppConstants.primaryColor.withOpacity(0.05)
-                    : Colors.grey.withOpacity(0.03),
+                    ? AppConstants.primaryColor.withValues(alpha: 0.05)
+                    : Colors.grey.withValues(alpha: 0.03),
                 borderRadius: BorderRadius.circular(12),
                 border: index == 0
-                    ? Border.all(color: AppConstants.primaryColor.withOpacity(0.2))
+                    ? Border.all(color: AppConstants.primaryColor.withValues(alpha: 0.2))
                     : null,
               ),
               child: Column(
@@ -938,7 +938,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: medalColor!.withOpacity(0.2),
+                            color: medalColor!.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(medalIcon, color: medalColor, size: 18),
@@ -948,7 +948,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           width: 32,
                           height: 32,
                           decoration: BoxDecoration(
-                            color: Colors.grey.withOpacity(0.1),
+                            color: Colors.grey.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Center(
@@ -997,7 +997,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppConstants.primaryColor.withOpacity(0.1),
+                              color: AppConstants.primaryColor.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
@@ -1022,7 +1022,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       valueColor: AlwaysStoppedAnimation<Color>(
                         index == 0
                             ? AppConstants.primaryColor
-                            : AppConstants.primaryColor.withOpacity(0.6),
+                            : AppConstants.primaryColor.withValues(alpha: 0.6),
                       ),
                       minHeight: 8,
                     ),

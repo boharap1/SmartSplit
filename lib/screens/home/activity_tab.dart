@@ -195,8 +195,8 @@ class _ActivityTabState extends State<ActivityTab>
           ),
           tabs: const [
             Tab(text: 'Expenses'),
-            Tab(text: 'History'),
             Tab(text: 'Settle Up'),
+            Tab(text: 'History'),
           ],
         ),
       ),
@@ -210,8 +210,8 @@ class _ActivityTabState extends State<ActivityTab>
               controller: _tabController,
               children: [
                 _buildExpensesTab(),
-                _buildHistoryTab(),
                 _buildSettleUpTab(),
+                _buildHistoryTab(),
               ],
             ),
     );
