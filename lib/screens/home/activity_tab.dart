@@ -21,12 +21,20 @@ class ActivityTab extends StatefulWidget {
 class _ActivityTabState extends State<ActivityTab>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  static const _pageSize = 20;
+
   List<_ActivityItem> _expenses = [];
   List<_SettlementItem> _settlements = [];
   Map<String, double> _groupBalances = {};
   final Map<String, String> _userNames = {};
   final Map<String, String> _groupNames = {};
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+
+  int _expensePageLimit = _pageSize;
+  int _settlementPageLimit = _pageSize;
+  bool _hasMoreExpenses = false;
+  bool _hasMoreSettlements = false;
 
   @override
   void initState() {
@@ -82,7 +90,7 @@ class _ActivityTabState extends State<ActivityTab>
             .doc(group.groupId)
             .collection('expenses')
             .orderBy('createdAt', descending: true)
-            .limit(20)
+            .limit(_expensePageLimit)
             .get();
         for (final doc in expSnap.docs) {
           final e = ExpenseModel.fromFirestore(doc);
@@ -105,7 +113,7 @@ class _ActivityTabState extends State<ActivityTab>
             .doc(group.groupId)
             .collection('settlements')
             .orderBy('createdAt', descending: true)
-            .limit(20)
+            .limit(_settlementPageLimit)
             .get();
         for (final doc in setSnap.docs) {
           final d = doc.data();
@@ -158,14 +166,41 @@ class _ActivityTabState extends State<ActivityTab>
     expenses.sort((a, b) => b.date.compareTo(a.date));
     settlements.sort((a, b) => b.date.compareTo(a.date));
 
+    // If any group returned a full page, there may be more to load.
+    final moreExp = groups.any((g) {
+      final count = expenses.where((e) => e.groupId == g.groupId).length;
+      return count >= _expensePageLimit;
+    });
+    final moreSett = groups.any((g) {
+      final count = settlements.where((s) => s.groupId == g.groupId).length;
+      return count >= _settlementPageLimit;
+    });
+
     if (mounted) {
       setState(() {
         _expenses = expenses;
         _settlements = settlements;
         _groupBalances = balances;
+        _hasMoreExpenses = moreExp;
+        _hasMoreSettlements = moreSett;
         _isLoading = false;
+        _isLoadingMore = false;
       });
     }
+  }
+
+  Future<void> _loadMoreExpenses() async {
+    if (_isLoadingMore || !_hasMoreExpenses) return;
+    setState(() => _isLoadingMore = true);
+    _expensePageLimit += _pageSize;
+    await _loadData();
+  }
+
+  Future<void> _loadMoreSettlements() async {
+    if (_isLoadingMore || !_hasMoreSettlements) return;
+    setState(() => _isLoadingMore = true);
+    _settlementPageLimit += _pageSize;
+    await _loadData();
   }
 
   String _name(String uid) {
@@ -230,8 +265,11 @@ class _ActivityTabState extends State<ActivityTab>
       color: AppConstants.primaryColor,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _expenses.length,
+        itemCount: _expenses.length + (_hasMoreExpenses ? 1 : 0),
         itemBuilder: (_, i) {
+          if (i == _expenses.length) {
+            return _loadMoreButton(_isLoadingMore, _loadMoreExpenses);
+          }
           final e = _expenses[i];
           final showHeader = i == 0 || !_sameDay(e.date, _expenses[i - 1].date);
           return Column(
@@ -336,6 +374,32 @@ class _ActivityTabState extends State<ActivityTab>
     );
   }
 
+  Widget _loadMoreButton(bool loading, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: loading
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppConstants.primaryColor,
+                ),
+              )
+            : OutlinedButton(
+                onPressed: onTap,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppConstants.primaryColor,
+                  side: const BorderSide(color: AppConstants.primaryColor),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+                ),
+                child: const Text('Load more'),
+              ),
+      ),
+    );
+  }
+
   Widget _buildHistoryTab() {
     if (_settlements.isEmpty) {
       return _emptyState(
@@ -346,8 +410,11 @@ class _ActivityTabState extends State<ActivityTab>
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: _settlements.length,
+      itemCount: _settlements.length + (_hasMoreSettlements ? 1 : 0),
       itemBuilder: (_, i) {
+        if (i == _settlements.length) {
+          return _loadMoreButton(_isLoadingMore, _loadMoreSettlements);
+        }
         final s = _settlements[i];
         final gn = _groupNames[s.groupId] ?? '';
         return Container(

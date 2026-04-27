@@ -106,17 +106,26 @@ const RESEND_COOLDOWN = 60 * 1000;        // 60 s between requests
 const MAX_ATTEMPTS    = 5;
 
 // ── Guard: rate limit ────────────────────────────────────────────────────────
+//
+// Uses a dedicated `rate_limits` collection that is separate from the OTP doc,
+// so deleting/expiring an OTP cannot reset the cooldown window. The check and
+// timestamp update are wrapped in a transaction to make them atomic.
 
-async function checkRateLimit(docRef) {
-  const snap = await docRef.get();
-  if (!snap.exists) return;
-  const created = snap.data().createdAt?.toDate?.();
-  if (created && Date.now() - created.getTime() < RESEND_COOLDOWN) {
-    throw new HttpsError(
-      "resource-exhausted",
-      "Please wait 60 seconds before requesting another code."
-    );
-  }
+async function checkAndSetRateLimit(uid, type) {
+  const docRef = db.collection("rate_limits").doc(`${type}_${uid}`);
+  await db.runTransaction(async (t) => {
+    const snap = await t.get(docRef);
+    if (snap.exists) {
+      const lastMs = snap.data().at?.toMillis() ?? 0;
+      if (Date.now() - lastMs < RESEND_COOLDOWN) {
+        throw new HttpsError(
+          "resource-exhausted",
+          "Please wait 60 seconds before requesting another code."
+        );
+      }
+    }
+    t.set(docRef, { at: admin.firestore.Timestamp.fromMillis(Date.now()) });
+  });
 }
 
 // ── Guard: validate stored OTP document ─────────────────────────────────────
@@ -198,7 +207,7 @@ exports.requestEmailVerificationOtp = onCall(
     if (!email) throw new HttpsError("failed-precondition", "No email on account.");
 
     const docRef = db.collection("otp_requests").doc(`verify_${uid}`);
-    await checkRateLimit(docRef);
+    await checkAndSetRateLimit(uid, "verify");
 
     const otp = generateOtp();
 
@@ -266,7 +275,7 @@ exports.requestPasswordResetOtp = onCall(
 
     const uid    = user.uid;
     const docRef = db.collection("otp_requests").doc(`reset_${uid}`);
-    await checkRateLimit(docRef);
+    await checkAndSetRateLimit(uid, "reset");
 
     const otp = generateOtp();
 
@@ -321,6 +330,96 @@ exports.verifyPasswordResetOtp = onCall(
 
     await admin.auth().updateUser(uid, { password: newPassword });
     await docRef.update({ used: true });
+
+    return { success: true };
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Function 5 — Dispatch in-app notifications  (requires signed-in user)
+//
+// Writes to users/{uid}/notifications via Admin SDK (bypasses Firestore rules)
+// and sends FCM push to each recipient's registered device token.
+// ════════════════════════════════════════════════════════════════════════════
+
+exports.dispatchNotification = onCall(
+  { enforceAppCheck: false, invoker: "public" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+
+    const {
+      toUserIds,
+      excludeUserId,
+      type,
+      title,
+      body,
+      groupId,
+      relatedId,
+      fromUserName,
+    } = request.data ?? {};
+
+    if (!Array.isArray(toUserIds) || toUserIds.length === 0) {
+      throw new HttpsError("invalid-argument", "toUserIds must be a non-empty array.");
+    }
+    if (!type || !title || !body) {
+      throw new HttpsError("invalid-argument", "type, title, and body are required.");
+    }
+
+    // If a groupId is provided, verify the caller is a member of that group.
+    if (groupId) {
+      const groupSnap = await db.collection("groups").doc(groupId).get();
+      if (!groupSnap.exists) {
+        throw new HttpsError("not-found", "Group not found.");
+      }
+      const members = groupSnap.data().members ?? [];
+      if (!members.includes(request.auth.uid)) {
+        throw new HttpsError("permission-denied", "Not a member of this group.");
+      }
+    }
+
+    const recipients = toUserIds.filter((id) => id !== excludeUserId);
+    if (recipients.length === 0) return { success: true };
+
+    const batch = db.batch();
+    const now   = admin.firestore.FieldValue.serverTimestamp();
+
+    for (const uid of recipients) {
+      const ref = db.collection("users").doc(uid).collection("notifications").doc();
+      batch.set(ref, {
+        id:        ref.id,
+        type,
+        title,
+        body,
+        isRead:    false,
+        createdAt: now,
+        ...(groupId      && { groupId }),
+        ...(relatedId    && { relatedId }),
+        ...(fromUserName && { fromUserName }),
+      });
+    }
+    await batch.commit();
+
+    // Best-effort FCM push to each recipient's device token.
+    const tokenDocs = await Promise.all(
+      recipients.map((uid) => db.collection("users").doc(uid).get())
+    );
+    const messages = tokenDocs
+      .map((snap) => snap.data()?.fcmToken)
+      .filter(Boolean)
+      .map((token) => ({
+        token,
+        notification: { title, body },
+        data: {
+          type,
+          ...(groupId   && { groupId }),
+          ...(relatedId && { relatedId }),
+        },
+        android: { priority: "high" },
+      }));
+
+    if (messages.length > 0) {
+      await admin.messaging().sendEach(messages);
+    }
 
     return { success: true };
   }

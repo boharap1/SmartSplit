@@ -10,11 +10,15 @@ enum ExpenseStatus { initial, loading, loaded, error }
 class ExpenseProvider extends ChangeNotifier {
   final ExpenseService _expenseService = ExpenseService();
 
+  static const _pageSize = 20;
+
   ExpenseStatus _status = ExpenseStatus.initial;
   List<ExpenseModel> _expenses = [];
   Map<String, double> _balances = {};
   String? _errorMessage;
   String? _currentGroupId;
+  int _pageLimit = _pageSize;
+  bool _hasMore = false;
 
   StreamSubscription<List<ExpenseModel>>? _expensesSubscription;
 
@@ -24,6 +28,7 @@ class ExpenseProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get isLoading => _status == ExpenseStatus.loading;
   bool get hasExpenses => _expenses.isNotEmpty;
+  bool get hasMore => _hasMore;
 
   double get totalGroupExpenses =>
       _expenses.fold(0.0, (sum, e) => sum + e.totalAmount);
@@ -32,14 +37,22 @@ class ExpenseProvider extends ChangeNotifier {
     if (_currentGroupId != groupId) {
       _expensesSubscription?.cancel();
       _currentGroupId = groupId;
+      _pageLimit = _pageSize; // reset pagination when switching groups
     }
 
     _status = ExpenseStatus.loading;
     notifyListeners();
 
-    _expensesSubscription = _expenseService.getGroupExpenses(groupId).listen(
+    _subscribe(groupId);
+  }
+
+  void _subscribe(String groupId) {
+    _expensesSubscription?.cancel();
+    _expensesSubscription =
+        _expenseService.getGroupExpenses(groupId, limit: _pageLimit).listen(
       (expenses) {
         _expenses = expenses;
+        _hasMore = expenses.length == _pageLimit;
         _status = ExpenseStatus.loaded;
         _errorMessage = null;
         notifyListeners();
@@ -53,12 +66,21 @@ class ExpenseProvider extends ChangeNotifier {
     );
   }
 
+  /// Increases the page limit by [_pageSize] and re-subscribes.
+  void loadMore() {
+    if (!_hasMore || _currentGroupId == null) return;
+    _pageLimit += _pageSize;
+    _subscribe(_currentGroupId!);
+  }
+
   void stopListeningToExpenses() {
     _expensesSubscription?.cancel();
     _expensesSubscription = null;
     _expenses = [];
     _balances = {};
     _currentGroupId = null;
+    _pageLimit = _pageSize;
+    _hasMore = false;
     _status = ExpenseStatus.initial;
     notifyListeners();
   }

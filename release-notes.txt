@@ -1,0 +1,10 @@
+v1.0.1 — Bug Fixes
+
+• Fixed OTP keyboard disappearing when switching to the email app to copy the verification code
+• Added "Load more" pagination to the Expenses and History tabs
+• Notifications now dispatched via secure Cloud Function (server-side validation + FCM push for background delivery)
+• Enabled Firestore offline persistence — the app now works without an internet connection
+• Crashlytics wired up for automatic error reporting
+
+Please test and submit feedback:
+https://docs.google.com/forms/d/e/1FAIpQLScvq0pX3xixETXTIhAmjZ9hSsfRE20sBjQOtp-oai0jTSZSPw/viewform?usp=publish-editor

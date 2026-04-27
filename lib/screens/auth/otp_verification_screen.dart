@@ -23,7 +23,8 @@ class OtpVerificationScreen extends StatefulWidget {
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
 }
 
-class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+class _OtpVerificationScreenState extends State<OtpVerificationScreen>
+    with WidgetsBindingObserver {
   // ── OTP input ─────────────────────────────────────────────────────────────
   // Single hidden TextField + 6 visual boxes.
   // This approach handles both manual digit-by-digit entry and paste natively.
@@ -43,17 +44,31 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ctrl.addListener(_onOtpChanged);
     _startCooldown(); // The caller already requested an OTP; start cooldown immediately.
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ctrl.removeListener(_onOtpChanged);
     _ctrl.dispose();
     _focusNode.dispose();
     _timer?.cancel();
     super.dispose();
+  }
+
+  // Re-request focus when user returns from another app (e.g. email client).
+  // Without this, autofocus only fires on first build so the keyboard stays
+  // hidden after the user backgrounds the app to check their inbox.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && _otp.length < 6 && !_isVerifying) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

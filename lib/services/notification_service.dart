@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/notification_model.dart';
@@ -130,15 +131,14 @@ class NotificationService {
     );
   }
 
-  // ── Cross-device Firestore notification dispatch ──────────────────────────
+  // ── Cross-device notification dispatch via Cloud Function ────────────────
   //
-  // When a user performs an action (adds expense, records payment, joins group),
-  // their client writes notification documents to each recipient's subcollection:
-  //   users/{uid}/notifications/{notificationId}
+  // Calls the `dispatchNotification` Cloud Function which:
+  //   1. Validates the caller is a group member (if groupId is supplied).
+  //   2. Writes notification docs via the Admin SDK (bypasses Firestore rules).
+  //   3. Sends FCM push to each recipient's device token.
   //
-  // Recipients' apps pick this up via Firestore real-time listeners.
-  // For background/terminated delivery, deploy the Cloud Functions in
-  // functions/index.js which trigger FCM push on Firestore writes.
+  // Direct client writes to users/{uid}/notifications are blocked by rules.
 
   static Future<void> dispatch({
     required List<String> toUserIds,
@@ -150,31 +150,19 @@ class NotificationService {
     String? relatedId,
     String? fromUserName,
   }) async {
-    final recipients =
-        toUserIds.where((id) => id != excludeUserId).toList();
-    if (recipients.isEmpty) return;
-
     try {
-      final batch = _db.batch();
-      for (final uid in recipients) {
-        final ref = _db
-            .collection('users')
-            .doc(uid)
-            .collection('notifications')
-            .doc();
-        batch.set(ref, {
-          'id': ref.id,
-          'type': type.name,
-          'title': title,
-          'body': body,
-          'isRead': false,
-          'createdAt': FieldValue.serverTimestamp(),
-          if (groupId != null) 'groupId': groupId,
-          if (relatedId != null) 'relatedId': relatedId,
-          if (fromUserName != null) 'fromUserName': fromUserName,
-        });
-      }
-      await batch.commit();
+      await FirebaseFunctions.instance
+          .httpsCallable('dispatchNotification')
+          .call({
+        'toUserIds': toUserIds,
+        'type':      type.name,
+        'title':     title,
+        'body':      body,
+        if (excludeUserId != null) 'excludeUserId': excludeUserId,
+        if (groupId      != null) 'groupId':       groupId,
+        if (relatedId    != null) 'relatedId':     relatedId,
+        if (fromUserName != null) 'fromUserName':  fromUserName,
+      });
     } catch (_) {
       // Notification dispatch is best-effort; never block the main action.
     }

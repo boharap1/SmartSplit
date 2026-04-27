@@ -9,7 +9,15 @@
       "Bash(firebase --version)",
       "PowerShell(node --version)",
       "PowerShell(npm --version)",
-      "PowerShell(firebase --version)"
+      "PowerShell(firebase --version)",
+      "Bash(dart --version)",
+      "Bash(./gradlew tasks *)",
+      "Bash(where java *)",
+      "Bash(java -version)",
+      "Read(//c/Program Files/Android/Android Studio/jbr/bin/**)",
+      "Read(//c/Program Files/Android/Android Studio/jre/bin/**)",
+      "Bash(export JAVA_HOME=\"C:/Program Files/Android/Android Studio/jbr\")",
+      "Bash(./gradlew :app:tasks --all)"
     ]
   }
 }

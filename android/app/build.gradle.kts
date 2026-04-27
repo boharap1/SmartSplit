@@ -3,6 +3,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
+    id("com.google.firebase.appdistribution")
 }
 
 android {
@@ -31,6 +32,15 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            firebaseAppDistribution {
+                artifactType = "APK"
+                releaseNotesFile = rootProject.projectDir.resolve("../release-notes.txt").absolutePath
+                groups = "internal-testers"
+            }
         }
     }
 }

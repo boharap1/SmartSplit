@@ -43,9 +43,10 @@ class ExpenseService {
     }
   }
 
-  Stream<List<ExpenseModel>> getGroupExpenses(String groupId) {
+  Stream<List<ExpenseModel>> getGroupExpenses(String groupId, {int limit = 20}) {
     return _expensesCollection(groupId)
         .orderBy('date', descending: true)
+        .limit(limit)
         .snapshots()
         .map((snapshot) =>
             snapshot.docs.map((doc) => ExpenseModel.fromFirestore(doc)).toList());

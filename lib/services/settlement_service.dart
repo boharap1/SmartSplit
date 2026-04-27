@@ -3,6 +3,8 @@ import '../models/bank_details_model.dart';
 import '../models/expense_model.dart';
 import '../models/notification_model.dart';
 import '../models/settlement_model.dart';
+import '../utils/app_logger.dart';
+import '../utils/bank_details_encryption.dart';
 import 'notification_service.dart';
 import 'settlement_algorithm.dart';
 
@@ -49,7 +51,8 @@ class SettlementService {
       }
 
       return balances;
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('calculateBalances', e, s);
       return {};
     }
   }
@@ -85,7 +88,8 @@ class SettlementService {
       }
 
       return SettlementAlgorithm.calculateSettlements(balances);
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('calculateOptimizedSettlements', e, s);
       return SettlementResult(
         netBalances: {},
         settlements: [],
@@ -147,7 +151,8 @@ class SettlementService {
       );
 
       return (settlement: settlement, error: null);
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('recordSettlement', e, s);
       return (settlement: null, error: 'Failed to record settlement.');
     }
   }
@@ -168,7 +173,8 @@ class SettlementService {
     try {
       await _settlementsCollection(groupId).doc(settlementId).delete();
       return (success: true, error: null);
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('deleteSettlement', e, s);
       return (success: false, error: 'Failed to delete settlement.');
     }
   }
@@ -178,11 +184,14 @@ class SettlementService {
     required BankDetails bankDetails,
   }) async {
     try {
+      final encrypted =
+          BankDetailsEncryption.encrypt(bankDetails.toMap(), userId);
       await _firestore.collection('users').doc(userId).update({
-        'bankDetails': bankDetails.toMap(),
+        'bankDetails': encrypted,
       });
       return (success: true, error: null);
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('saveBankDetails', e, s);
       return (success: false, error: 'Failed to save bank details.');
     }
   }
@@ -192,10 +201,13 @@ class SettlementService {
       final doc = await _firestore.collection('users').doc(userId).get();
       final data = doc.data();
       if (data != null && data['bankDetails'] != null) {
-        return BankDetails.fromMap(data['bankDetails']);
+        final decrypted = BankDetailsEncryption.decrypt(
+            Map<String, dynamic>.from(data['bankDetails'] as Map), userId);
+        return BankDetails.fromMap(decrypted);
       }
       return null;
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('getBankDetails', e, s);
       return null;
     }
   }

@@ -21,11 +21,11 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == userId;
 
       // Notifications subcollection:
-      //   - Any authenticated user can CREATE (dispatch) a notification for
-      //     any user (e.g. "you were added to a group").
+      //   - CREATE is blocked for all clients; only the dispatchNotification
+      //     Cloud Function writes here via the Admin SDK (bypasses these rules).
       //   - Only the owner can read, mark as read, or delete their own.
       match /notifications/{notificationId} {
-        allow create: if request.auth != null;
+        allow create: if false;
         allow read, update, delete: if request.auth != null
             && request.auth.uid == userId;
       }

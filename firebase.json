@@ -10,5 +10,8 @@
         "firebase-debug.*.log"
       ]
     }
-  ]
+  ],
+  "appDistribution": {
+    "appId": "1:932273516583:android:5a3352dc6764a3e4461e02"
+  }
 }
