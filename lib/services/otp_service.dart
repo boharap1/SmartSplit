@@ -12,18 +12,66 @@ class OtpService {
   final FirebaseFunctions _fn =
       FirebaseFunctions.instanceFor(region: 'europe-west2');
 
+  static const _cooldownSeconds = 60;
+
+  // Timestamps of the last successful OTP dispatch — survives screen rebuilds.
+  static DateTime? _resetSentAt;
+  static DateTime? _verifySentAt;
+
+  /// Remaining cooldown in seconds for password-reset requests (0 = ready).
+  int get resetCooldownRemaining {
+    if (_resetSentAt == null) return 0;
+    final elapsed = DateTime.now().difference(_resetSentAt!).inSeconds;
+    return (_cooldownSeconds - elapsed).clamp(0, _cooldownSeconds);
+  }
+
+  /// Remaining cooldown in seconds for email-verification requests (0 = ready).
+  int get verifyCooldownRemaining {
+    if (_verifySentAt == null) return 0;
+    final elapsed = DateTime.now().difference(_verifySentAt!).inSeconds;
+    return (_cooldownSeconds - elapsed).clamp(0, _cooldownSeconds);
+  }
+
   // ── Email verification ────────────────────────────────────────────────────
 
-  Future<OtpResult> requestEmailVerificationOtp() =>
-      _call('requestEmailVerificationOtp', null);
+  Future<OtpResult> requestEmailVerificationOtp() async {
+    final result = await _call('requestEmailVerificationOtp', null);
+    if (result.success) _verifySentAt = DateTime.now();
+    return result;
+  }
 
   Future<OtpResult> verifyEmailOtp(String otp) =>
       _call('verifyEmailOtp', {'otp': otp});
 
+  // ── Registration (pre-creation email verification) ────────────────────────
+
+  static DateTime? _registrationSentAt;
+
+  int get registrationCooldownRemaining {
+    if (_registrationSentAt == null) return 0;
+    final elapsed = DateTime.now().difference(_registrationSentAt!).inSeconds;
+    return (_cooldownSeconds - elapsed).clamp(0, _cooldownSeconds);
+  }
+
+  Future<OtpResult> requestRegistrationOtp(String email) async {
+    final result = await _call('requestRegistrationOtp', {'email': email});
+    if (result.success) _registrationSentAt = DateTime.now();
+    return result;
+  }
+
+  Future<OtpResult> verifyRegistrationOtp(String email, String otp) =>
+      _call('verifyRegistrationOtp', {'email': email, 'otp': otp});
+
+  Future<OtpResult> finalizeRegistration() =>
+      _call('finalizeRegistration', null);
+
   // ── Password reset ────────────────────────────────────────────────────────
 
-  Future<OtpResult> requestPasswordResetOtp(String email) =>
-      _call('requestPasswordResetOtp', {'email': email});
+  Future<OtpResult> requestPasswordResetOtp(String email) async {
+    final result = await _call('requestPasswordResetOtp', {'email': email});
+    if (result.success) _resetSentAt = DateTime.now();
+    return result;
+  }
 
   Future<OtpResult> verifyPasswordResetOtp({
     required String email,

@@ -102,6 +102,10 @@ class AuthService {
     await currentUser?.reload();
   }
 
+  Future<void> refreshToken() async {
+    await currentUser?.getIdToken(true);
+  }
+
   Future<UserModel?> getUserData(String uid) async {
     try {
       final doc = await _firestore.collection('users').doc(uid).get();

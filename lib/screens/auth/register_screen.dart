@@ -1,52 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
+import '../../services/otp_service.dart';
 import '../../utils/constants.dart';
-import '../../utils/password_strength.dart';
-import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
-
-// ── Password strength bar (3-segment indicator) ────────────────────────────
-
-class _StrengthBar extends StatelessWidget {
-  final PasswordStrength strength;
-  const _StrengthBar({required this.strength});
-
-  @override
-  Widget build(BuildContext context) {
-    if (strength == PasswordStrength.empty) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        Row(
-          children: List.generate(3, (i) {
-            return Expanded(
-              child: Container(
-                height: 4,
-                margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
-                decoration: BoxDecoration(
-                  color: i < strength.filledSegments
-                      ? strength.color
-                      : Colors.grey[200],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            );
-          }),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Password strength: ${strength.label}',
-          style: TextStyle(color: strength.color, fontSize: 12),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Screen ─────────────────────────────────────────────────────────────────
+import '../../widgets/custom_text_field.dart';
+import 'otp_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -56,55 +14,68 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _formKey                 = GlobalKey<FormState>();
-  final _nameController          = TextEditingController();
-  final _emailController         = TextEditingController();
-  final _passwordController      = TextEditingController();
-  final _confirmController       = TextEditingController();
+  final _formKey     = GlobalKey<FormState>();
+  final _nameCtrl    = TextEditingController();
+  final _emailCtrl   = TextEditingController();
 
-  bool             _obscurePassword = true;
-  bool             _obscureConfirm  = true;
-  PasswordStrength _strength        = PasswordStrength.empty;
+  bool    _isSending = false;
+  String? _errorMsg;
+  int     _cooldown  = 0;
+  Timer?  _timer;
 
   @override
   void initState() {
     super.initState();
-    _passwordController.addListener(() {
-      setState(() => _strength = measurePasswordStrength(_passwordController.text));
-    });
+    final remaining = OtpService.instance.registrationCooldownRemaining;
+    if (remaining > 0) _startCooldown(remaining);
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmController.dispose();
+    _timer?.cancel();
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _handleRegister() async {
-    context.read<AuthProvider>().clearError();
-    if (!_formKey.currentState!.validate()) return;
-
-    final success = await context.read<AuthProvider>().register(
-          name:     _nameController.text,
-          email:    _emailController.text,
-          password: _passwordController.text,
-        );
-
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created! Please verify your email.'),
-          backgroundColor: AppConstants.successColor,
-        ),
-      );
-      // AuthWrapper will route to EmailVerificationScreen automatically.
-    }
+  void _startCooldown([int seconds = 60]) {
+    _cooldown = seconds;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() => _cooldown--);
+      if (_cooldown <= 0) t.cancel();
+    });
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate() || _isSending || _cooldown > 0) return;
+    setState(() { _isSending = true; _errorMsg = null; });
+
+    final name  = _nameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final result = await OtpService.instance.requestRegistrationOtp(email);
+
+    if (!mounted) return;
+    setState(() => _isSending = false);
+
+    if (result.success) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OtpVerificationScreen(
+            email:   email,
+            purpose: OtpPurpose.registration,
+            name:    name,
+          ),
+        ),
+      );
+    } else {
+      setState(() => _errorMsg = result.error ?? 'Failed to send code. Please try again.');
+      final remaining = OtpService.instance.registrationCooldownRemaining;
+      if (remaining > 0) _startCooldown(remaining);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -127,228 +98,112 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: [
                 const SizedBox(height: 20),
 
-                Text(
-                  'Create Account',
-                  style: AppConstants.headingStyle,
-                  textAlign: TextAlign.center,
+                Container(
+                  width: 88,
+                  height: 88,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.person_add_rounded,
+                      size: 44, color: AppConstants.primaryColor),
                 ),
+                const SizedBox(height: 28),
+
+                Text('Create Account',
+                    style: AppConstants.headingStyle,
+                    textAlign: TextAlign.center),
                 const SizedBox(height: 8),
                 Text(
-                  'Join SmartSplit and start splitting bills easily',
+                  'Enter your name and email. We\'ll send a 6-digit code to verify your address before creating your account.',
                   style: AppConstants.subheadingStyle,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 40),
 
-                // Full name
                 CustomTextField(
-                  controller: _nameController,
+                  controller: _nameCtrl,
                   label: 'Full Name',
                   hint: 'Enter your full name',
                   prefixIcon: Icons.person_outline,
                   keyboardType: TextInputType.name,
                   textInputAction: TextInputAction.next,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return AppConstants.nameRequired;
-                    }
-                    if (v.trim().length < 2) {
-                      return 'Name must be at least 2 characters';
-                    }
+                    if (v == null || v.trim().isEmpty) return AppConstants.nameRequired;
+                    if (v.trim().length < 2) return 'Name must be at least 2 characters';
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
 
-                // Email
                 CustomTextField(
-                  controller: _emailController,
-                  label: 'Email',
+                  controller: _emailCtrl,
+                  label: 'Email Address',
                   hint: 'Enter your email',
                   prefixIcon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return AppConstants.emailRequired;
-                    }
-                    if (!AppConstants.emailRegex.hasMatch(v.trim())) {
-                      return AppConstants.emailInvalid;
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Password
-                CustomTextField(
-                  controller: _passwordController,
-                  label: 'Password',
-                  hint: 'Create a strong password',
-                  prefixIcon: Icons.lock_outline,
-                  obscureText: _obscurePassword,
-                  textInputAction: TextInputAction.next,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: Colors.grey,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) {
-                      return AppConstants.passwordRequired;
-                    }
-                    if (v.length < 8) return 'Password must be at least 8 characters';
-                    return null;
-                  },
-                ),
-
-                // Strength meter
-                _StrengthBar(strength: _strength),
-                const SizedBox(height: 16),
-
-                // Confirm password
-                CustomTextField(
-                  controller: _confirmController,
-                  label: 'Confirm Password',
-                  hint: 'Confirm your password',
-                  prefixIcon: Icons.lock_outline,
-                  obscureText: _obscureConfirm,
                   textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _handleRegister(),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureConfirm
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: Colors.grey,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
-                  ),
+                  onSubmitted: (_) => _submit(),
                   validator: (v) {
-                    if (v == null || v.isEmpty) {
-                      return 'Please confirm your password';
-                    }
-                    if (v != _passwordController.text) {
-                      return AppConstants.passwordsDoNotMatch;
-                    }
+                    if (v == null || v.trim().isEmpty) return AppConstants.emailRequired;
+                    if (!AppConstants.emailRegex.hasMatch(v.trim())) return AppConstants.emailInvalid;
                     return null;
                   },
                 ),
                 const SizedBox(height: 24),
 
-                // Password requirements hint
-                Container(
-                  padding: const EdgeInsets.all(AppConstants.defaultPadding),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.08),
-                    borderRadius:
-                        BorderRadius.circular(AppConstants.borderRadius),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.info_outline,
-                              color: Colors.blue, size: 18),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Strong password tips',
-                            style: TextStyle(
-                                color: Colors.blue[700],
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13),
+                if (_errorMsg != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppConstants.errorColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+                      border: Border.all(
+                          color: AppConstants.errorColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline,
+                            color: AppConstants.errorColor, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _cooldown > 0
+                                ? 'Please wait $_cooldown seconds before requesting another code.'
+                                : _errorMsg!,
+                            style:
+                                const TextStyle(color: AppConstants.errorColor),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ...const [
-                        '• At least 8 characters',
-                        '• Uppercase and lowercase letters',
-                        '• At least one number',
-                        '• A special character (!@#\$ etc.)',
-                      ].map(
-                        (t) => Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(t,
-                              style: TextStyle(
-                                  color: Colors.blue[700], fontSize: 12)),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 24),
+                ],
 
-                // Error banner
-                Consumer<AuthProvider>(
-                  builder: (_, auth, _) {
-                    if (auth.errorMessage == null) {
-                      return const SizedBox.shrink();
-                    }
-                    return Container(
-                      padding:
-                          const EdgeInsets.all(AppConstants.defaultPadding),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color:
-                            AppConstants.errorColor.withValues(alpha: 0.1),
-                        borderRadius:
-                            BorderRadius.circular(AppConstants.borderRadius),
-                        border: Border.all(
-                          color: AppConstants.errorColor.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.error_outline,
-                              color: AppConstants.errorColor),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              auth.errorMessage!,
-                              style: const TextStyle(
-                                  color: AppConstants.errorColor),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-
-                Consumer<AuthProvider>(
-                  builder: (_, auth, _) => CustomButton(
-                    text: 'Create Account',
-                    onPressed: _handleRegister,
-                    isLoading: auth.isLoading,
-                    icon: Icons.person_add,
-                  ),
+                CustomButton(
+                  text: _cooldown > 0
+                      ? 'Retry in ${_cooldown}s'
+                      : 'Send Verification Code',
+                  onPressed: (_isSending || _cooldown > 0) ? null : _submit,
+                  isLoading: _isSending,
+                  icon: Icons.send_rounded,
                 ),
                 const SizedBox(height: 24),
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      'Already have an account? ',
-                      style: TextStyle(color: Colors.black54),
-                    ),
+                    const Text('Already have an account? ',
+                        style: TextStyle(color: Colors.black54)),
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
-                      child: const Text(
-                        'Sign In',
-                        style: TextStyle(
-                          color: AppConstants.primaryColor,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      child: const Text('Sign In',
+                          style: TextStyle(
+                            color: AppConstants.primaryColor,
+                            fontWeight: FontWeight.bold,
+                          )),
                     ),
                   ],
                 ),

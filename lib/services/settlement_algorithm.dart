@@ -96,8 +96,23 @@ class SettlementAlgorithm {
       );
     }
 
-    final totalDebt = debtorPence.fold(0, (s, d) => s + d) / _scaleFactor;
+    final totalDebtPence   = debtorPence.fold(0, (s, d) => s + d);
+    final totalCreditPence = creditorPence.fold(0, (s, d) => s + d);
+    final totalDebt = totalDebtPence / _scaleFactor;
     final originalCount = n * m;
+
+    if ((totalDebtPence - totalCreditPence).abs() > 1) {
+      // Debts and credits don't balance — data inconsistency.
+      return SettlementResult(
+        netBalances: balances,
+        settlements: [],
+        originalTransactionCount: originalCount,
+        optimizedTransactionCount: 0,
+        totalDebt: totalDebt,
+        isFullySettleable: false,
+        error: 'Balances do not sum to zero — cannot fully settle.',
+      );
+    }
 
     // Build MCMF graph
     final int S = 0;

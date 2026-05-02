@@ -1,5 +1,5 @@
 /**
- * SmartSplit — OTP Cloud Functions
+ * SmartSplit — OTP Cloud Functions v2
  *
  * Exported functions:
  *   requestEmailVerificationOtp  — (auth required) sends 6-digit OTP for account verification
@@ -38,6 +38,7 @@ const { setGlobalOptions }   = require("firebase-functions/v2");
 const admin                  = require("firebase-admin");
 const nodemailer              = require("nodemailer");
 const crypto                 = require("crypto");
+const dns                    = require("dns").promises;
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -55,6 +56,24 @@ const _transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS,
   },
 });
+
+/**
+ * Returns false when the email domain has no MX records (unroutable address).
+ * Catches fake domains like test@notreal.xyz before we attempt to send.
+ * Note: a domain CAN have MX records even if the specific mailbox doesn't
+ * exist (e.g. test@gmail.com) — those cases pass through here and SMTP
+ * accepts them. This check only eliminates the worst invalid-domain case.
+ */
+async function domainIsReachable(email) {
+  const domain = email.split("@")[1];
+  if (!domain) return false;
+  try {
+    const records = await dns.resolveMx(domain);
+    return records && records.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 async function sendMail(to, subject, html) {
   try {
@@ -221,7 +240,17 @@ exports.requestEmailVerificationOtp = onCall(
       createdAt:  admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    await sendMail(email, "Your SmartSplit verification code", verifyHtml(otp));
+    try {
+      await sendMail(email, "Your SmartSplit verification code", verifyHtml(otp));
+    } catch (mailErr) {
+      // Roll back the OTP doc and rate-limit stamp so the user can retry
+      // immediately without waiting 60 s for a failure they didn't cause.
+      await Promise.allSettled([
+        docRef.delete(),
+        db.collection("rate_limits").doc(`verify_${uid}`).delete(),
+      ]);
+      throw mailErr;
+    }
     return { success: true };
   }
 );
@@ -290,7 +319,15 @@ exports.requestPasswordResetOtp = onCall(
       createdAt:  admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    await sendMail(email, "Your SmartSplit password reset code", resetHtml(otp));
+    try {
+      await sendMail(email, "Your SmartSplit password reset code", resetHtml(otp));
+    } catch (mailErr) {
+      await Promise.allSettled([
+        docRef.delete(),
+        db.collection("rate_limits").doc(`reset_${uid}`).delete(),
+      ]);
+      throw mailErr;
+    }
     return { success: true };
   }
 );
@@ -336,7 +373,132 @@ exports.verifyPasswordResetOtp = onCall(
 );
 
 // ════════════════════════════════════════════════════════════════════════════
-// Function 5 — Dispatch in-app notifications  (requires signed-in user)
+// Function 5 — Request pre-registration OTP  (no auth — email must not exist)
+// ════════════════════════════════════════════════════════════════════════════
+
+exports.requestRegistrationOtp = onCall(
+  { enforceAppCheck: false, invoker: "public" },
+  async (request) => {
+    const rawEmail = request.data?.email;
+    if (!rawEmail) throw new HttpsError("invalid-argument", "Email is required.");
+    const email = rawEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new HttpsError("invalid-argument", "Enter a valid email address.");
+    }
+
+    // Reject if an account already exists — user should sign in instead.
+    try {
+      await admin.auth().getUserByEmail(email);
+      throw new HttpsError("already-exists", "An account already exists with this email. Please sign in.");
+    } catch (err) {
+      if (err.code === "app/already-exists" || (err.httpErrorCode && err.httpErrorCode.status === 409)) throw err;
+      if (err instanceof HttpsError) throw err;
+      // auth/user-not-found is expected — continue
+    }
+
+    // Reject domains with no MX record — catches obviously fake addresses
+    // before spending a send attempt. Real-mailbox-not-found cases (e.g.
+    // test@gmail.com) still pass here; SMTP accepts those silently.
+    const reachable = await domainIsReachable(email);
+    if (!reachable) {
+      throw new HttpsError(
+        "invalid-argument",
+        "This email address doesn't appear to be valid. Please check it and try again."
+      );
+    }
+
+    // Use an email-derived key since there is no uid yet.
+    const emailHash = crypto.createHash("sha256").update(email).digest("hex").substring(0, 32);
+    await checkAndSetRateLimit(emailHash, "register");
+
+    const otp    = generateOtp();
+    const docRef = db.collection("otp_requests").doc(`register_${emailHash}`);
+
+    await docRef.set({
+      hashedOtp: hashOtp(otp, emailHash),
+      expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + OTP_TTL_MS)),
+      attempts:  0,
+      used:      false,
+      type:      "registration",
+      email,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    try {
+      await sendMail(email, "Your SmartSplit registration code", verifyHtml(otp));
+    } catch (mailErr) {
+      await Promise.allSettled([
+        docRef.delete(),
+        db.collection("rate_limits").doc(`register_${emailHash}`).delete(),
+      ]);
+      throw mailErr;
+    }
+    return { success: true };
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Function 6 — Verify registration OTP  (no auth)
+// ════════════════════════════════════════════════════════════════════════════
+
+exports.verifyRegistrationOtp = onCall(
+  { enforceAppCheck: false, invoker: "public" },
+  async (request) => {
+    const { email: rawEmail, otp } = request.data ?? {};
+    if (!rawEmail || !otp) {
+      throw new HttpsError("invalid-argument", "Email and code are required.");
+    }
+    if (!/^\d{6}$/.test(otp)) {
+      throw new HttpsError("invalid-argument", "Enter a valid 6-digit code.");
+    }
+
+    const email     = rawEmail.trim().toLowerCase();
+    const emailHash = crypto.createHash("sha256").update(email).digest("hex").substring(0, 32);
+    const docRef    = db.collection("otp_requests").doc(`register_${emailHash}`);
+
+    await validateOtpDoc(docRef, otp, emailHash);
+    await docRef.update({ used: true });
+
+    return { success: true };
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Function 7 — Finalise registration: mark emailVerified after account created
+// Called immediately after createUserWithEmailAndPassword succeeds.
+// ════════════════════════════════════════════════════════════════════════════
+
+exports.finalizeRegistration = onCall(
+  { enforceAppCheck: false, invoker: "public" },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+
+    const rawEmail = request.auth.token.email;
+    if (!rawEmail) throw new HttpsError("failed-precondition", "No email on account.");
+    const email     = rawEmail.trim().toLowerCase();
+    const emailHash = crypto.createHash("sha256").update(email).digest("hex").substring(0, 32);
+
+    const docRef = db.collection("otp_requests").doc(`register_${emailHash}`);
+    const snap   = await docRef.get();
+
+    if (!snap.exists || !snap.data().used) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Email not pre-verified. Please complete email verification first."
+      );
+    }
+
+    const uid = request.auth.uid;
+    await admin.auth().updateUser(uid, { emailVerified: true });
+    await db.collection("users").doc(uid).update({ emailVerified: true }).catch(() => {});
+    await docRef.delete();
+
+    return { success: true };
+  }
+);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Function 8 — Dispatch in-app notifications  (requires signed-in user)
 //
 // Writes to users/{uid}/notifications via Admin SDK (bypasses Firestore rules)
 // and sends FCM push to each recipient's registered device token.

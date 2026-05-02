@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_service.dart';
+import '../services/otp_service.dart';
 import '../services/secure_storage_manager.dart';
 
 enum AuthStatus {
@@ -45,6 +46,11 @@ class AuthProvider extends ChangeNotifier {
     try {
       final currentUser = _authService.currentUser;
       if (currentUser != null) {
+        // Best-effort reload: syncs emailVerified from the server so a user who
+        // verified in a previous session isn't stuck on EmailVerificationScreen.
+        // Wrapped in its own try-catch so a network failure at startup does not
+        // force the user back to LoginScreen.
+        try { await _authService.reloadUser(); } catch (_) {}
         _user = await _authService.getUserData(currentUser.uid);
         if (_user != null) {
           _status = AuthStatus.authenticated;
@@ -96,6 +102,48 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ── Register ──────────────────────────────────────────────────────────────
+
+  /// Called by PasswordSetupScreen after the user has verified their email via
+  /// OTP. Creates the Firebase Auth account, then calls finalizeRegistration
+  /// to mark emailVerified = true via the Admin SDK.
+  Future<bool> registerWithVerifiedEmail({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    final result = await _authService.registerWithEmail(
+      name:     name,
+      email:    email,
+      password: password,
+    );
+
+    if (result.user == null) {
+      _errorMessage = result.error;
+      _status       = AuthStatus.error;
+      notifyListeners();
+      return false;
+    }
+
+    // Best-effort: mark emailVerified = true in Firebase Auth + Firestore.
+    // If this fails the account is still usable; don't block the user.
+    await OtpService.instance.finalizeRegistration();
+
+    _user              = result.user;
+    _status            = AuthStatus.authenticated;
+    _biometricUnlocked = true;
+    await SecureStorageManager.instance.saveLastEmail(email);
+
+    // Sync the fresh emailVerified flag into the in-memory user object.
+    try { await _authService.reloadUser(); } catch (_) {}
+    try { await _authService.refreshToken(); } catch (_) {}
+
+    notifyListeners();
+    return true;
+  }
 
   Future<bool> register({
     required String name,
@@ -184,6 +232,9 @@ class AuthProvider extends ChangeNotifier {
 
   Future<bool> checkEmailVerification() async {
     await _authService.reloadUser();
+    // Force JWT refresh so Firestore rules immediately see email_verified = true.
+    // Without this, the token cache holds email_verified=false for up to 1 hour.
+    await _authService.refreshToken();
     notifyListeners();
     return isEmailVerified;
   }

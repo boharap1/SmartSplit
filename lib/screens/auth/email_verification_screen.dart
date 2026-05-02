@@ -53,11 +53,11 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppConstants.largePadding),
           child: Column(
             children: [
-              const Spacer(),
+              const SizedBox(height: 48),
 
               Container(
                 width: 100,
@@ -134,7 +134,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ),
               ],
 
-              const Spacer(),
+              const SizedBox(height: 40),
 
               SizedBox(
                 width: double.infinity,

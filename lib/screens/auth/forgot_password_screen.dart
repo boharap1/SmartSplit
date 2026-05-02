@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/otp_service.dart';
 import '../../utils/constants.dart';
@@ -17,8 +18,10 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey   = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
-  bool    _isSending = false;
+  bool    _isSending  = false;
   String? _errorMsg;
+  int     _cooldown   = 0;
+  Timer?  _timer;
 
   @override
   void initState() {
@@ -26,16 +29,30 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (widget.prefillEmail != null) {
       _emailCtrl.text = widget.prefillEmail!;
     }
+    // Resume any in-progress cooldown from a previous send attempt.
+    final remaining = OtpService.instance.resetCooldownRemaining;
+    if (remaining > 0) _startCooldown(remaining);
   }
 
   @override
   void dispose() {
+    _timer?.cancel();
     _emailCtrl.dispose();
     super.dispose();
   }
 
+  void _startCooldown([int seconds = 60]) {
+    _cooldown = seconds;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() => _cooldown--);
+      if (_cooldown <= 0) t.cancel();
+    });
+  }
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate() || _isSending) return;
+    if (!_formKey.currentState!.validate() || _isSending || _cooldown > 0) return;
     setState(() { _isSending = true; _errorMsg = null; });
 
     final email  = _emailCtrl.text.trim();
@@ -55,8 +72,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
       );
     } else {
-      setState(() =>
-          _errorMsg = result.error ?? 'Failed to send code. Please try again.');
+      final error = result.error ?? 'Failed to send code. Please try again.';
+      setState(() => _errorMsg = error);
+      // If the server rate-limited us, resume from the actual remaining time.
+      final remaining = OtpService.instance.resetCooldownRemaining;
+      if (remaining > 0) _startCooldown(remaining);
     }
   }
 
@@ -149,7 +169,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            _errorMsg!,
+                            _cooldown > 0
+                                ? 'Please wait $_cooldown seconds before requesting another code.'
+                                : _errorMsg!,
                             style: const TextStyle(
                                 color: AppConstants.errorColor),
                           ),
@@ -160,8 +182,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ],
 
                 CustomButton(
-                  text: 'Send Reset Code',
-                  onPressed: _isSending ? null : _submit,
+                  text: _cooldown > 0 ? 'Retry in ${_cooldown}s' : 'Send Reset Code',
+                  onPressed: (_isSending || _cooldown > 0) ? null : _submit,
                   isLoading: _isSending,
                   icon: Icons.send_rounded,
                 ),

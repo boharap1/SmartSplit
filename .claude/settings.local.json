@@ -17,7 +17,8 @@
       "Read(//c/Program Files/Android/Android Studio/jbr/bin/**)",
       "Read(//c/Program Files/Android/Android Studio/jre/bin/**)",
       "Bash(export JAVA_HOME=\"C:/Program Files/Android/Android Studio/jbr\")",
-      "Bash(./gradlew :app:tasks --all)"
+      "Bash(./gradlew :app:tasks --all)",
+      "Bash(firebase functions:log --only requestPasswordResetOtp)"
     ]
   }
 }
