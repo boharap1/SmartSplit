@@ -39,13 +39,14 @@ class ExpenseService {
       await docRef.set(expense.toFirestore());
       return (expense: expense, error: null);
     } catch (e) {
-      return (expense: null, error: 'Error: ${e.toString()}');
+      return (expense: null, error: 'Failed to create expense.');
     }
   }
 
-  Stream<List<ExpenseModel>> getGroupExpenses(String groupId) {
+  Stream<List<ExpenseModel>> getGroupExpenses(String groupId, {int limit = 20}) {
     return _expensesCollection(groupId)
         .orderBy('date', descending: true)
+        .limit(limit)
         .snapshots()
         .map((snapshot) =>
             snapshot.docs.map((doc) => ExpenseModel.fromFirestore(doc)).toList());
@@ -59,7 +60,7 @@ class ExpenseService {
       await _expensesCollection(groupId).doc(expenseId).delete();
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to delete expense.');
     }
   }
 

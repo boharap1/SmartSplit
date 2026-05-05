@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group_model.dart';
+import '../models/notification_model.dart';
+import 'notification_service.dart';
 
 class GroupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -8,7 +10,6 @@ class GroupService {
   CollectionReference<Map<String, dynamic>> get _groupsCollection =>
       _firestore.collection('groups');
 
-  // Create a new group
   Future<({GroupModel? group, String? error})> createGroup({
     required String groupName,
     String? description,
@@ -25,62 +26,113 @@ class GroupService {
         groupCode: groupCode,
         createdBy: createdBy,
         members: [createdBy],
+        adminIds: [createdBy],
         createdAt: DateTime.now(),
       );
 
       await _groupsCollection.doc(groupId).set(group.toFirestore());
-
       return (group: group, error: null);
     } catch (e) {
-      // Show actual error for debugging
-      return (group: null, error: 'Error: ${e.toString()}');
+      return (group: null, error: 'Failed to create group. Please try again.');
     }
   }
 
-  // Generate unique 6-digit code
   Future<String> _generateUniqueCode() async {
     final Random random = Random();
-    String code;
+    String code = '';
     bool isUnique = false;
     int attempts = 0;
     const int maxAttempts = 10;
 
     do {
       code = random.nextInt(1000000).toString().padLeft(6, '0');
-
-      final QuerySnapshot existingGroups = await _groupsCollection
+      final QuerySnapshot existing = await _groupsCollection
           .where('groupCode', isEqualTo: code)
           .limit(1)
           .get();
-
-      isUnique = existingGroups.docs.isEmpty;
+      isUnique = existing.docs.isEmpty;
       attempts++;
     } while (!isUnique && attempts < maxAttempts);
 
-    if (!isUnique) {
-      throw Exception('Failed to generate unique code');
+    if (!isUnique) throw Exception('Failed to generate unique code');
+    return code;
+  }
+
+  // Generates a temporary 6-digit invite code valid for 10 minutes.
+  Future<({String? code, String? error})> generateInviteCode({
+    required String groupId,
+    required String userId,
+  }) async {
+    try {
+      final doc = await _groupsCollection.doc(groupId).get();
+      if (!doc.exists) return (code: null, error: 'Group not found.');
+
+      final group = GroupModel.fromFirestore(doc);
+      if (!group.isAdmin(userId)) {
+        return (code: null, error: 'Only group admins can generate invite codes.');
+      }
+
+      final code = await _generateUniqueInviteCode();
+      final expiry = DateTime.now().add(const Duration(minutes: 10));
+
+      await _groupsCollection.doc(groupId).update({
+        'activeInviteCode': code,
+        'activeInviteExpiry': Timestamp.fromDate(expiry),
+      });
+
+      return (code: code, error: null);
+    } catch (e) {
+      return (code: null, error: 'Failed to generate invite code. Please try again.');
     }
+  }
+
+  Future<String> _generateUniqueInviteCode() async {
+    final Random random = Random();
+    String code = '';
+    int attempts = 0;
+    const int maxAttempts = 10;
+
+    do {
+      code = random.nextInt(1000000).toString().padLeft(6, '0');
+      final QuerySnapshot existing = await _groupsCollection
+          .where('activeInviteCode', isEqualTo: code)
+          .limit(1)
+          .get();
+      if (existing.docs.isEmpty) break;
+      // Reuse if the existing code is already expired
+      final existingGroup = GroupModel.fromFirestore(existing.docs.first);
+      if (!existingGroup.hasActiveInvite) break;
+      attempts++;
+    } while (attempts < maxAttempts);
 
     return code;
   }
 
-  // Join group by code
   Future<({GroupModel? group, String? error})> joinGroupByCode({
     required String code,
     required String userId,
+    // Optional – used to build the member-joined notification.
+    String? joiningUserName,
   }) async {
     try {
       final QuerySnapshot querySnapshot = await _groupsCollection
-          .where('groupCode', isEqualTo: code.trim())
+          .where('activeInviteCode', isEqualTo: code.trim())
           .limit(1)
           .get();
 
       if (querySnapshot.docs.isEmpty) {
-        return (group: null, error: 'Invalid code. Group not found.');
+        return (group: null, error: 'Invalid or expired invite code.');
       }
 
       final DocumentSnapshot doc = querySnapshot.docs.first;
       final GroupModel group = GroupModel.fromFirestore(doc);
+
+      if (!group.hasActiveInvite) {
+        return (
+          group: null,
+          error: 'This invite code has expired. Ask an admin to generate a new one.',
+        );
+      }
 
       if (group.members.contains(userId)) {
         return (group: null, error: 'You are already a member of this group.');
@@ -90,124 +142,166 @@ class GroupService {
         'members': FieldValue.arrayUnion([userId]),
       });
 
-      final updatedDoc = await _groupsCollection.doc(group.groupId).get();
-      final updatedGroup = GroupModel.fromFirestore(updatedDoc);
+      // Notify existing members that someone joined.
+      final joiner = joiningUserName ?? 'Someone';
+      NotificationService.dispatch(
+        toUserIds: group.members,
+        excludeUserId: userId,
+        type: NotificationType.memberJoined,
+        title: 'New member in ${group.groupName}',
+        body: '$joiner joined the group',
+        groupId: group.groupId,
+        fromUserName: joiningUserName,
+      );
 
-      return (group: updatedGroup, error: null);
+      final updatedDoc = await _groupsCollection.doc(group.groupId).get();
+      return (group: GroupModel.fromFirestore(updatedDoc), error: null);
     } catch (e) {
-      return (group: null, error: 'Error: ${e.toString()}');
+      return (group: null, error: 'Failed to join group. Please try again.');
     }
   }
 
-  // Get user's groups (real-time stream)
   Stream<List<GroupModel>> getUserGroups(String userId) {
     return _groupsCollection
         .where('members', arrayContains: userId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => GroupModel.fromFirestore(doc))
-              .toList();
-        });
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => GroupModel.fromFirestore(doc)).toList());
   }
 
-  // Get single group by ID
   Future<GroupModel?> getGroupById(String groupId) async {
     try {
       final doc = await _groupsCollection.doc(groupId).get();
-      if (doc.exists) {
-        return GroupModel.fromFirestore(doc);
-      }
-      return null;
+      return doc.exists ? GroupModel.fromFirestore(doc) : null;
     } catch (e) {
       return null;
     }
   }
 
-  // Get group stream (real-time)
   Stream<GroupModel?> getGroupStream(String groupId) {
-    return _groupsCollection
-        .doc(groupId)
-        .snapshots()
-        .map((doc) {
-          if (doc.exists) {
-            return GroupModel.fromFirestore(doc);
-          }
-          return null;
-        });
+    return _groupsCollection.doc(groupId).snapshots().map((doc) {
+      return doc.exists ? GroupModel.fromFirestore(doc) : null;
+    });
   }
 
-  // Update group
   Future<({bool success, String? error})> updateGroup({
     required String groupId,
+    required String requestingUserId,
     String? groupName,
     String? description,
   }) async {
     try {
+      final doc = await _groupsCollection.doc(groupId).get();
+      if (!doc.exists) return (success: false, error: 'Group not found.');
+
+      final group = GroupModel.fromFirestore(doc);
+      if (!group.isAdmin(requestingUserId)) {
+        return (success: false, error: 'Only group admins can edit the group.');
+      }
+
       final Map<String, dynamic> updates = {};
-
-      if (groupName != null) {
-        updates['groupName'] = groupName.trim();
-      }
-      if (description != null) {
-        updates['description'] = description.trim();
-      }
-
-      if (updates.isEmpty) {
-        return (success: false, error: 'No changes to update.');
-      }
+      if (groupName != null) updates['groupName'] = groupName.trim();
+      if (description != null) updates['description'] = description.trim();
+      if (updates.isEmpty) return (success: false, error: 'No changes to update.');
 
       await _groupsCollection.doc(groupId).update(updates);
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to update group. Please try again.');
     }
   }
 
-  // Leave group
+  Future<({bool success, String? error})> assignAdmin({
+    required String groupId,
+    required String targetUserId,
+    required String requestingUserId,
+  }) async {
+    try {
+      final doc = await _groupsCollection.doc(groupId).get();
+      if (!doc.exists) return (success: false, error: 'Group not found.');
+
+      final group = GroupModel.fromFirestore(doc);
+      if (!group.isOwner(requestingUserId)) {
+        return (success: false, error: 'Only the group owner can assign admins.');
+      }
+      if (!group.members.contains(targetUserId)) {
+        return (success: false, error: 'User is not a member of this group.');
+      }
+      if (group.adminIds.contains(targetUserId)) {
+        return (success: false, error: 'User is already an admin.');
+      }
+
+      await _groupsCollection.doc(groupId).update({
+        'adminIds': FieldValue.arrayUnion([targetUserId]),
+      });
+      return (success: true, error: null);
+    } catch (e) {
+      return (success: false, error: 'Failed to assign admin role. Please try again.');
+    }
+  }
+
+  Future<({bool success, String? error})> removeAdmin({
+    required String groupId,
+    required String targetUserId,
+    required String requestingUserId,
+  }) async {
+    try {
+      final doc = await _groupsCollection.doc(groupId).get();
+      if (!doc.exists) return (success: false, error: 'Group not found.');
+
+      final group = GroupModel.fromFirestore(doc);
+      if (!group.isOwner(requestingUserId)) {
+        return (success: false, error: 'Only the group owner can remove admins.');
+      }
+      if (group.isOwner(targetUserId)) {
+        return (success: false, error: 'Cannot remove admin role from the group owner.');
+      }
+
+      await _groupsCollection.doc(groupId).update({
+        'adminIds': FieldValue.arrayRemove([targetUserId]),
+      });
+      return (success: true, error: null);
+    } catch (e) {
+      return (success: false, error: 'Failed to remove admin role. Please try again.');
+    }
+  }
+
   Future<({bool success, String? error})> leaveGroup({
     required String groupId,
     required String userId,
   }) async {
     try {
       final doc = await _groupsCollection.doc(groupId).get();
-      if (!doc.exists) {
-        return (success: false, error: 'Group not found.');
-      }
+      if (!doc.exists) return (success: false, error: 'Group not found.');
 
       final group = GroupModel.fromFirestore(doc);
-
       if (group.createdBy == userId) {
         return (
           success: false,
-          error: 'As the group owner, you cannot leave. Delete the group instead.'
+          error: 'As the group owner, you cannot leave. Delete the group instead.',
         );
       }
 
       await _groupsCollection.doc(groupId).update({
         'members': FieldValue.arrayRemove([userId]),
+        'adminIds': FieldValue.arrayRemove([userId]),
       });
-
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to leave group. Please try again.');
     }
   }
 
-  // Delete group
   Future<({bool success, String? error})> deleteGroup({
     required String groupId,
     required String userId,
   }) async {
     try {
       final doc = await _groupsCollection.doc(groupId).get();
-      if (!doc.exists) {
-        return (success: false, error: 'Group not found.');
-      }
+      if (!doc.exists) return (success: false, error: 'Group not found.');
 
       final group = GroupModel.fromFirestore(doc);
-
       if (group.createdBy != userId) {
         return (success: false, error: 'Only the group owner can delete this group.');
       }
@@ -215,11 +309,10 @@ class GroupService {
       await _groupsCollection.doc(groupId).delete();
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to delete group. Please try again.');
     }
   }
 
-  // Remove member
   Future<({bool success, String? error})> removeMember({
     required String groupId,
     required String memberId,
@@ -227,27 +320,27 @@ class GroupService {
   }) async {
     try {
       final doc = await _groupsCollection.doc(groupId).get();
-      if (!doc.exists) {
-        return (success: false, error: 'Group not found.');
-      }
+      if (!doc.exists) return (success: false, error: 'Group not found.');
 
       final group = GroupModel.fromFirestore(doc);
-
-      if (group.createdBy != requestingUserId) {
-        return (success: false, error: 'Only the group owner can remove members.');
+      if (!group.isAdmin(requestingUserId)) {
+        return (success: false, error: 'Only group admins can remove members.');
       }
-
       if (memberId == group.createdBy) {
         return (success: false, error: 'Cannot remove the group owner.');
+      }
+      // Non-owner admins cannot remove other admins
+      if (group.adminIds.contains(memberId) && !group.isOwner(requestingUserId)) {
+        return (success: false, error: 'Only the owner can remove other admins.');
       }
 
       await _groupsCollection.doc(groupId).update({
         'members': FieldValue.arrayRemove([memberId]),
+        'adminIds': FieldValue.arrayRemove([memberId]),
       });
-
       return (success: true, error: null);
     } catch (e) {
-      return (success: false, error: 'Error: ${e.toString()}');
+      return (success: false, error: 'Failed to remove member. Please try again.');
     }
   }
 }

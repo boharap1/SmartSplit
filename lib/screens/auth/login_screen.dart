@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/secure_storage_manager.dart';
 import '../../utils/constants.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
+import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -14,10 +16,17 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _formKey           = GlobalKey<FormState>();
+  final _emailController   = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillEmail();
+  }
 
   @override
   void dispose() {
@@ -26,76 +35,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
-    // Clear any previous errors
-    context.read<AuthProvider>().clearError();
-
-    // Validate form
-    if (!_formKey.currentState!.validate()) {
-      return;
+  Future<void> _prefillEmail() async {
+    final last = await SecureStorageManager.instance.getLastEmail();
+    if (last != null && mounted) {
+      setState(() => _emailController.text = last);
     }
+  }
 
-    // Attempt login
-    final success = await context.read<AuthProvider>().signIn(
-          email: _emailController.text,
+  // ── Actions ───────────────────────────────────────────────────────────────
+
+  Future<void> _handleLogin() async {
+    context.read<AuthProvider>().clearError();
+    if (!_formKey.currentState!.validate()) return;
+
+    await context.read<AuthProvider>().signIn(
+          email:    _emailController.text,
           password: _passwordController.text,
         );
+    // AuthWrapper handles navigation on success.
+  }
 
-    if (success && mounted) {
-      // Navigation will be handled by auth state listener in main.dart
-    }
+  void _navigateToForgotPassword() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(
+          prefillEmail: _emailController.text.trim().isNotEmpty
+              ? _emailController.text.trim()
+              : null,
+        ),
+      ),
+    );
   }
 
   void _navigateToRegister() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const RegisterScreen()),
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
     );
   }
 
-  void _handleForgotPassword() async {
-    final email = _emailController.text.trim();
-    
-    if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your email address first'),
-          backgroundColor: AppConstants.errorColor,
-        ),
-      );
-      return;
-    }
-
-    if (!AppConstants.emailRegex.hasMatch(email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a valid email address'),
-          backgroundColor: AppConstants.errorColor,
-        ),
-      );
-      return;
-    }
-
-    final success = await context.read<AuthProvider>().sendPasswordResetEmail(email);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success
-                ? 'Password reset email sent. Check your inbox.'
-                : context.read<AuthProvider>().errorMessage ?? 'Failed to send reset email',
-          ),
-          backgroundColor: success ? AppConstants.successColor : AppConstants.errorColor,
-        ),
-      );
-    }
-  }
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppConstants.largePadding),
@@ -105,8 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 60),
-                
-                // App Logo/Icon
+
                 Icon(
                   Icons.receipt_long_rounded,
                   size: 80,
@@ -114,7 +97,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // App Name
                 Text(
                   AppConstants.appName,
                   style: AppConstants.headingStyle,
@@ -122,7 +104,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // Tagline
                 Text(
                   'Split bills, not friendships',
                   style: AppConstants.subheadingStyle,
@@ -130,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 48),
 
-                // Email Field
+                // Email field
                 CustomTextField(
                   controller: _emailController,
                   label: 'Email',
@@ -138,11 +119,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   prefixIcon: Icons.email_outlined,
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
                       return AppConstants.emailRequired;
                     }
-                    if (!AppConstants.emailRegex.hasMatch(value.trim())) {
+                    if (!AppConstants.emailRegex.hasMatch(v.trim())) {
                       return AppConstants.emailInvalid;
                     }
                     return null;
@@ -150,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Password Field
+                // Password field
                 CustomTextField(
                   controller: _passwordController,
                   label: 'Password',
@@ -161,81 +142,85 @@ class _LoginScreenState extends State<LoginScreen> {
                   onSubmitted: (_) => _handleLogin(),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       color: Colors.grey,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
+                  validator: (v) {
+                    if (v == null || v.isEmpty) {
                       return AppConstants.passwordRequired;
                     }
                     return null;
                   },
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
 
-                // Forgot Password
+                // Forgot password link — opens dedicated screen
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: _handleForgotPassword,
+                    onPressed: _navigateToForgotPassword,
                     child: const Text(
                       'Forgot Password?',
                       style: TextStyle(color: AppConstants.primaryColor),
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
-                // Error Message
+                // Error banner
                 Consumer<AuthProvider>(
-                  builder: (context, auth, child) {
-                    if (auth.errorMessage != null) {
-                      return Container(
-                        padding: const EdgeInsets.all(AppConstants.defaultPadding),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: AppConstants.errorColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-                          border: Border.all(color: AppConstants.errorColor.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline, color: AppConstants.errorColor),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                auth.errorMessage!,
-                                style: const TextStyle(color: AppConstants.errorColor),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
+                  builder: (_, auth, _) {
+                    if (auth.errorMessage == null) {
+                      return const SizedBox.shrink();
                     }
-                    return const SizedBox.shrink();
-                  },
-                ),
-
-                // Login Button
-                Consumer<AuthProvider>(
-                  builder: (context, auth, child) {
-                    return CustomButton(
-                      text: 'Sign In',
-                      onPressed: _handleLogin,
-                      isLoading: auth.isLoading,
-                      icon: Icons.login,
+                    return Container(
+                      padding: const EdgeInsets.all(AppConstants.defaultPadding),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: AppConstants.errorColor.withValues(alpha: 0.1),
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.borderRadius),
+                        border: Border.all(
+                          color:
+                              AppConstants.errorColor.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: AppConstants.errorColor),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              auth.errorMessage!,
+                              style: const TextStyle(
+                                  color: AppConstants.errorColor),
+                            ),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
+
+                // Sign-in button
+                Consumer<AuthProvider>(
+                  builder: (_, auth, _) => CustomButton(
+                    text: 'Sign In',
+                    onPressed: _handleLogin,
+                    isLoading: auth.isLoading,
+                    icon: Icons.login,
+                  ),
+                ),
+
                 const SizedBox(height: 24),
 
-                // Register Link
+                // Register link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [

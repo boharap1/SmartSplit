@@ -1,18 +1,24 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/expense_model.dart';
+import '../models/notification_model.dart';
 import '../services/expense_service.dart';
+import '../services/notification_service.dart';
 
 enum ExpenseStatus { initial, loading, loaded, error }
 
 class ExpenseProvider extends ChangeNotifier {
   final ExpenseService _expenseService = ExpenseService();
 
+  static const _pageSize = 20;
+
   ExpenseStatus _status = ExpenseStatus.initial;
   List<ExpenseModel> _expenses = [];
   Map<String, double> _balances = {};
   String? _errorMessage;
   String? _currentGroupId;
+  int _pageLimit = _pageSize;
+  bool _hasMore = false;
 
   StreamSubscription<List<ExpenseModel>>? _expensesSubscription;
 
@@ -22,6 +28,7 @@ class ExpenseProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get isLoading => _status == ExpenseStatus.loading;
   bool get hasExpenses => _expenses.isNotEmpty;
+  bool get hasMore => _hasMore;
 
   double get totalGroupExpenses =>
       _expenses.fold(0.0, (sum, e) => sum + e.totalAmount);
@@ -30,14 +37,22 @@ class ExpenseProvider extends ChangeNotifier {
     if (_currentGroupId != groupId) {
       _expensesSubscription?.cancel();
       _currentGroupId = groupId;
+      _pageLimit = _pageSize; // reset pagination when switching groups
     }
 
     _status = ExpenseStatus.loading;
     notifyListeners();
 
-    _expensesSubscription = _expenseService.getGroupExpenses(groupId).listen(
+    _subscribe(groupId);
+  }
+
+  void _subscribe(String groupId) {
+    _expensesSubscription?.cancel();
+    _expensesSubscription =
+        _expenseService.getGroupExpenses(groupId, limit: _pageLimit).listen(
       (expenses) {
         _expenses = expenses;
+        _hasMore = expenses.length == _pageLimit;
         _status = ExpenseStatus.loaded;
         _errorMessage = null;
         notifyListeners();
@@ -51,12 +66,21 @@ class ExpenseProvider extends ChangeNotifier {
     );
   }
 
+  /// Increases the page limit by [_pageSize] and re-subscribes.
+  void loadMore() {
+    if (!_hasMore || _currentGroupId == null) return;
+    _pageLimit += _pageSize;
+    _subscribe(_currentGroupId!);
+  }
+
   void stopListeningToExpenses() {
     _expensesSubscription?.cancel();
     _expensesSubscription = null;
     _expenses = [];
     _balances = {};
     _currentGroupId = null;
+    _pageLimit = _pageSize;
+    _hasMore = false;
     _status = ExpenseStatus.initial;
     notifyListeners();
   }
@@ -75,17 +99,23 @@ class ExpenseProvider extends ChangeNotifier {
     String? category,
     required DateTime date,
     required String createdBy,
+    // Optional – used to build notification messages.
+    String? groupName,
+    String? paidByName,
   }) async {
     _errorMessage = null;
     notifyListeners();
 
-    final splitAmount = totalAmount / participantIds.length;
-    final splits = participantIds
-        .map((userId) => ExpenseSplit(
-              userId: userId,
-              amount: double.parse(splitAmount.toStringAsFixed(2)),
-            ))
-        .toList();
+    final int totalPence = (totalAmount * 100).round();
+    final int count = participantIds.length;
+    final int basePence = totalPence ~/ count;
+    final int extraPence = totalPence - basePence * count;
+
+    final splits = <ExpenseSplit>[];
+    for (int i = 0; i < count; i++) {
+      final int pence = i < extraPence ? basePence + 1 : basePence;
+      splits.add(ExpenseSplit(userId: participantIds[i], amount: pence / 100.0));
+    }
 
     final result = await _expenseService.createExpense(
       groupId: groupId,
@@ -102,6 +132,22 @@ class ExpenseProvider extends ChangeNotifier {
     if (result.error != null) {
       _errorMessage = result.error;
       notifyListeners();
+    }
+
+    // Notify other participants about the new expense.
+    if (result.expense != null && participantIds.length > 1) {
+      final actor = paidByName ?? 'Someone';
+      final inGroup = groupName != null ? ' in $groupName' : '';
+      NotificationService.dispatch(
+        toUserIds: participantIds,
+        excludeUserId: createdBy,
+        type: NotificationType.expenseAdded,
+        title: 'New expense$inGroup',
+        body: '$actor added "$description" (£${totalAmount.toStringAsFixed(2)})',
+        groupId: groupId,
+        relatedId: result.expense!.expenseId,
+        fromUserName: paidByName,
+      );
     }
 
     return result;

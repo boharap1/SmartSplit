@@ -1,7 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/settlement_model.dart';
-import '../models/expense_model.dart';
 import '../models/bank_details_model.dart';
+import '../models/expense_model.dart';
+import '../models/notification_model.dart';
+import '../models/settlement_model.dart';
+import '../utils/app_logger.dart';
+import '../utils/bank_details_encryption.dart';
+import 'notification_service.dart';
 import 'settlement_algorithm.dart';
 
 class SettlementService {
@@ -15,62 +19,49 @@ class SettlementService {
     return _firestore.collection('groups').doc(groupId).collection('expenses');
   }
 
-  /// Calculate balances - EXACT same logic as ExpenseService
+  /// Calculates net balances for each member, adjusted for completed settlements.
   Future<Map<String, double>> calculateBalances(String groupId) async {
     try {
       final snapshot = await _expensesCollection(groupId).get();
       final expenses = snapshot.docs.map((doc) => ExpenseModel.fromFirestore(doc)).toList();
-      
-      print('DEBUG: Found ${expenses.length} expenses');
-      
+
       final Map<String, double> balances = {};
-      
+
       for (final expense in expenses) {
-        // Payer gets credited (positive balance = owed money)
         balances[expense.paidBy] = (balances[expense.paidBy] ?? 0) + expense.totalAmount;
-        
-        // Each participant gets debited (negative balance = owes money)
         for (final split in expense.splits) {
           balances[split.userId] = (balances[split.userId] ?? 0) - split.amount;
         }
       }
-      
-      // Adjust for completed settlements
+
       final settlementsSnapshot = await _settlementsCollection(groupId).get();
-      print('DEBUG: Found ${settlementsSnapshot.docs.length} settlements');
-      
+
       for (final doc in settlementsSnapshot.docs) {
         final data = doc.data();
         if (data['status'] == 'completed') {
           final fromUserId = data['fromUserId'] as String?;
           final toUserId = data['toUserId'] as String?;
           final amount = (data['amount'] as num?)?.toDouble() ?? 0;
-          
+
           if (fromUserId != null && toUserId != null && amount > 0) {
             balances[fromUserId] = (balances[fromUserId] ?? 0) + amount;
             balances[toUserId] = (balances[toUserId] ?? 0) - amount;
           }
         }
       }
-      
-      print('DEBUG: Final balances: $balances');
+
       return balances;
-    } catch (e) {
-      print('DEBUG ERROR: calculateBalances failed: $e');
+    } catch (e, s) {
+      AppLogger.error('calculateBalances', e, s);
       return {};
     }
   }
 
   Future<SettlementResult> calculateOptimizedSettlements(String groupId) async {
-    print('DEBUG: Starting calculateOptimizedSettlements for group: $groupId');
-    
     try {
       final balances = await calculateBalances(groupId);
-      
-      print('DEBUG: Balances received: $balances');
-      
+
       if (balances.isEmpty) {
-        print('DEBUG: Balances are empty, returning empty result');
         return SettlementResult(
           netBalances: {},
           settlements: [],
@@ -81,13 +72,10 @@ class SettlementService {
           error: null,
         );
       }
-      
-      // Check if there are actual imbalances
+
       final hasImbalances = balances.values.any((b) => b.abs() > 0.01);
-      print('DEBUG: Has imbalances: $hasImbalances');
-      
+
       if (!hasImbalances) {
-        print('DEBUG: No imbalances found, everyone is settled');
         return SettlementResult(
           netBalances: balances,
           settlements: [],
@@ -98,13 +86,10 @@ class SettlementService {
           error: null,
         );
       }
-      
-      final result = SettlementAlgorithm.calculateSettlements(balances);
-      print('DEBUG: Algorithm returned ${result.settlements.length} settlements');
-      
-      return result;
-    } catch (e) {
-      print('DEBUG ERROR: calculateOptimizedSettlements failed: $e');
+
+      return SettlementAlgorithm.calculateSettlements(balances);
+    } catch (e, s) {
+      AppLogger.error('calculateOptimizedSettlements', e, s);
       return SettlementResult(
         netBalances: {},
         settlements: [],
@@ -112,7 +97,7 @@ class SettlementService {
         optimizedTransactionCount: 0,
         totalDebt: 0,
         isFullySettleable: false,
-        error: 'Error: ${e.toString()}',
+        error: 'Failed to calculate settlements.',
       );
     }
   }
@@ -125,6 +110,9 @@ class SettlementService {
     String? paymentMethod,
     String? paymentReference,
     String? note,
+    // Optional – used to build the payment-received notification.
+    String? fromUserName,
+    String? groupName,
   }) async {
     try {
       if (amount <= 0) {
@@ -149,9 +137,23 @@ class SettlementService {
 
       await docRef.set(settlement.toFirestore());
 
+      // Notify the recipient that they received a payment.
+      final payer = fromUserName ?? 'Someone';
+      final inGroup = groupName != null ? ' in $groupName' : '';
+      NotificationService.dispatch(
+        toUserIds: [toUserId],
+        type: NotificationType.paymentReceived,
+        title: 'Payment received$inGroup',
+        body: '$payer paid you £${settlement.amount.toStringAsFixed(2)}',
+        groupId: groupId,
+        relatedId: docRef.id,
+        fromUserName: fromUserName,
+      );
+
       return (settlement: settlement, error: null);
-    } catch (e) {
-      return (settlement: null, error: 'Failed to record: ${e.toString()}');
+    } catch (e, s) {
+      AppLogger.error('recordSettlement', e, s);
+      return (settlement: null, error: 'Failed to record settlement.');
     }
   }
 
@@ -171,8 +173,9 @@ class SettlementService {
     try {
       await _settlementsCollection(groupId).doc(settlementId).delete();
       return (success: true, error: null);
-    } catch (e) {
-      return (success: false, error: 'Failed to delete: ${e.toString()}');
+    } catch (e, s) {
+      AppLogger.error('deleteSettlement', e, s);
+      return (success: false, error: 'Failed to delete settlement.');
     }
   }
 
@@ -181,12 +184,15 @@ class SettlementService {
     required BankDetails bankDetails,
   }) async {
     try {
+      final encrypted =
+          BankDetailsEncryption.encrypt(bankDetails.toMap(), userId);
       await _firestore.collection('users').doc(userId).update({
-        'bankDetails': bankDetails.toMap(),
+        'bankDetails': encrypted,
       });
       return (success: true, error: null);
-    } catch (e) {
-      return (success: false, error: 'Failed to save: ${e.toString()}');
+    } catch (e, s) {
+      AppLogger.error('saveBankDetails', e, s);
+      return (success: false, error: 'Failed to save bank details.');
     }
   }
 
@@ -195,10 +201,13 @@ class SettlementService {
       final doc = await _firestore.collection('users').doc(userId).get();
       final data = doc.data();
       if (data != null && data['bankDetails'] != null) {
-        return BankDetails.fromMap(data['bankDetails']);
+        final decrypted = BankDetailsEncryption.decrypt(
+            Map<String, dynamic>.from(data['bankDetails'] as Map), userId);
+        return BankDetails.fromMap(decrypted);
       }
       return null;
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('getBankDetails', e, s);
       return null;
     }
   }

@@ -227,6 +227,7 @@ class GroupProvider extends ChangeNotifier {
   Future<({GroupModel? group, String? error})> joinGroup({
     required String code,
     required String userId,
+    String? joiningUserName,
   }) async {
     _status = GroupStatus.loading;
     _errorMessage = null;
@@ -235,6 +236,7 @@ class GroupProvider extends ChangeNotifier {
     final result = await _groupService.joinGroupByCode(
       code: code,
       userId: userId,
+      joiningUserName: joiningUserName,
     );
 
     if (result.group != null) {
@@ -256,6 +258,7 @@ class GroupProvider extends ChangeNotifier {
   /// Updates group details (name, description).
   Future<bool> updateGroup({
     required String groupId,
+    required String requestingUserId,
     String? groupName,
     String? description,
   }) async {
@@ -264,6 +267,7 @@ class GroupProvider extends ChangeNotifier {
 
     final result = await _groupService.updateGroup(
       groupId: groupId,
+      requestingUserId: requestingUserId,
       groupName: groupName,
       description: description,
     );
@@ -353,6 +357,71 @@ class GroupProvider extends ChangeNotifier {
   }
 
   // ============================================================
+  // INVITE CODE OPERATIONS
+  // ============================================================
+
+  Future<({String? code, String? error})> generateInviteCode({
+    required String groupId,
+    required String userId,
+  }) async {
+    final result = await _groupService.generateInviteCode(
+      groupId: groupId,
+      userId: userId,
+    );
+    if (result.code == null) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
+    return result;
+  }
+
+  // ============================================================
+  // ADMIN OPERATIONS
+  // ============================================================
+
+  Future<bool> assignAdmin({
+    required String groupId,
+    required String targetUserId,
+    required String requestingUserId,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+
+    final result = await _groupService.assignAdmin(
+      groupId: groupId,
+      targetUserId: targetUserId,
+      requestingUserId: requestingUserId,
+    );
+
+    if (!result.success) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
+    return result.success;
+  }
+
+  Future<bool> removeAdmin({
+    required String groupId,
+    required String targetUserId,
+    required String requestingUserId,
+  }) async {
+    _errorMessage = null;
+    notifyListeners();
+
+    final result = await _groupService.removeAdmin(
+      groupId: groupId,
+      targetUserId: targetUserId,
+      requestingUserId: requestingUserId,
+    );
+
+    if (!result.success) {
+      _errorMessage = result.error;
+      notifyListeners();
+    }
+    return result.success;
+  }
+
+  // ============================================================
   // UTILITY METHODS
   // ============================================================
 
@@ -363,11 +432,8 @@ class GroupProvider extends ChangeNotifier {
   /// - Useful when navigating from list to details
   /// - Returns null if not found (user left group?)
   GroupModel? getGroupById(String groupId) {
-    try {
-      return _groups.firstWhere((g) => g.groupId == groupId);
-    } catch (e) {
-      return null;
-    }
+    final matches = _groups.where((g) => g.groupId == groupId);
+    return matches.isEmpty ? null : matches.first;
   }
 
   /// Clears any error message.

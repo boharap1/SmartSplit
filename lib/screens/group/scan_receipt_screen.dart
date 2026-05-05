@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../models/group_model.dart';
 import '../../services/receipt_scanner_service.dart';
 import '../../utils/constants.dart';
+import '../../providers/settings_provider.dart';
 import '../../widgets/custom_button.dart';
 import 'add_expense_screen.dart';
 
@@ -11,10 +13,15 @@ class ScanReceiptScreen extends StatefulWidget {
   final GroupModel group;
   final String currentUserId;
 
+  /// When set, the image picker launches immediately for this source on open,
+  /// skipping the manual "Select Receipt Image" button tap.
+  final ImageSource? initialSource;
+
   const ScanReceiptScreen({
     super.key,
     required this.group,
     required this.currentUserId,
+    this.initialSource,
   });
 
   @override
@@ -29,6 +36,16 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
   ScannedReceiptData? _scannedData;
   bool _isScanning = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSource != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _pickImage(widget.initialSource!),
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -82,10 +99,10 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
     }
   }
 
-  void _useScannedData() {
+  Future<void> _useScannedData() async {
     if (_scannedData == null) return;
 
-    Navigator.pushReplacement(
+    final groupName = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (context) => AddExpenseScreen(
@@ -95,6 +112,9 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
         ),
       ),
     );
+    if (groupName != null && mounted) {
+      Navigator.pop(context, groupName);
+    }
   }
 
   void _showImageSourceDialog() {
@@ -149,7 +169,6 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Scan Receipt'),
         backgroundColor: AppConstants.primaryColor,
@@ -263,7 +282,7 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
               Container(
                 padding: const EdgeInsets.all(AppConstants.defaultPadding),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(AppConstants.borderRadius),
                   border: Border.all(color: AppConstants.primaryColor.withOpacity(0.3)),
                 ),
@@ -292,7 +311,7 @@ class _ScanReceiptScreenState extends State<ScanReceiptScreen> {
                     _buildDataRow(
                       'Amount',
                       _scannedData!.totalAmount != null
-                          ? '£${_scannedData!.totalAmount!.toStringAsFixed(2)}'
+                          ? '${context.read<SettingsProvider>().currencySymbol}${_scannedData!.totalAmount!.toStringAsFixed(2)}'
                           : 'Not detected',
                       _scannedData!.totalAmount != null,
                     ),

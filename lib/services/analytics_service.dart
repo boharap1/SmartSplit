@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/expense_model.dart';
 import '../models/analytics_model.dart';
@@ -47,7 +48,7 @@ class AnalyticsService {
       // Calculate full analytics
       return _calculateAnalytics(expenses, userNames);
     } catch (e) {
-      print('Error getting analytics: $e');
+      debugPrint('Error getting analytics: $e');
       return GroupAnalytics(
         totalExpenses: 0,
         expenseCount: 0,
@@ -95,7 +96,7 @@ class AnalyticsService {
     Map<String, String> userNames,
   ) {
     // Calculate totals
-    final totalExpenses = expenses.fold(0.0, (sum, e) => sum + e.totalAmount);
+    final totalExpenses = expenses.fold(0.0, (acc, e) => acc + e.totalAmount);
     final expenseCount = expenses.length;
     final averageExpense = expenseCount > 0 ? totalExpenses / expenseCount : 0.0;
 
@@ -208,7 +209,7 @@ class AnalyticsService {
     final Map<String, int> userCounts = {};
 
     // Calculate total group spending for percentage
-    final totalGroupSpending = expenses.fold(0.0, (sum, e) => sum + e.totalAmount);
+    final totalGroupSpending = expenses.fold(0.0, (acc, e) => acc + e.totalAmount);
 
     for (final expense in expenses) {
       // Track what each user paid

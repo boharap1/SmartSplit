@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(Get-ChildItem -Path \"d:\\\\Projects\\\\smartsplit\" -Force)",
-      "Bash(Select-Object -Property Name, PSIsContainer)",
-      "Bash(Format-Table -AutoSize)"
-    ]
-  }
-}

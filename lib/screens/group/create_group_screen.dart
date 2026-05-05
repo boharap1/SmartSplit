@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
@@ -128,11 +127,11 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       isDismissible: false,  // Must tap button to close
       enableDrag: false,     // Prevent accidental dismiss
       backgroundColor: Colors.transparent,
-      builder: (context) => _SuccessBottomSheet(
+      builder: (sheetCtx) => _SuccessBottomSheet(
         group: group,
         onDone: () {
-          Navigator.pop(context);  // Close bottom sheet
-          Navigator.pop(context);  // Go back to home
+          Navigator.pop(sheetCtx);           // Close bottom sheet
+          Navigator.pop(context, group.groupName);  // Return group name to home
         },
       ),
     );
@@ -141,7 +140,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
       appBar: AppBar(
         title: const Text('Create Group'),
         backgroundColor: AppConstants.primaryColor,
@@ -309,25 +307,13 @@ class _SuccessBottomSheet extends StatelessWidget {
     required this.onDone,
   });
 
-  /// Copies group code to clipboard.
-  void _copyCode(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: group.groupCode));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Group code copied to clipboard!'),
-        backgroundColor: AppConstants.successColor,
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(AppConstants.largePadding),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,  // Take minimum space needed
@@ -376,56 +362,27 @@ class _SuccessBottomSheet extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // Group code display
-          const Text(
-            'Share this code with others:',
-            style: TextStyle(fontSize: 14),
-          ),
-          const SizedBox(height: 12),
-          
-          // Large code display with copy button
-          GestureDetector(
-            onTap: () => _copyCode(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 32,
-                vertical: 16,
-              ),
-              decoration: BoxDecoration(
-                color: AppConstants.primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-                border: Border.all(
-                  color: AppConstants.primaryColor.withOpacity(0.3),
-                  width: 2,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    group.groupCode,
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 8,  // Space between digits
-                      color: AppConstants.primaryColor,
+          // Invite info
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppConstants.primaryColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: AppConstants.primaryColor, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Open the group to generate a temporary invite code and share it with others.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[700],
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  const Icon(
-                    Icons.copy,
-                    color: AppConstants.primaryColor,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tap to copy',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[500],
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 32),
@@ -440,14 +397,6 @@ class _SuccessBottomSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          
-          // Future: Share button
-          // CustomButton(
-          //   text: 'Share Code',
-          //   onPressed: () => Share.share('Join my SmartSplit group: ${group.groupCode}'),
-          //   isOutlined: true,
-          //   icon: Icons.share,
-          // ),
         ],
       ),
     );

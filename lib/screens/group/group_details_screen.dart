@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -6,13 +7,10 @@ import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/group_model.dart';
 import '../../models/user_model.dart';
-import '../../models/expense_model.dart';
-import '../../services/expense_service.dart';
+import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
-import 'add_expense_screen.dart';
-import 'scan_receipt_screen.dart';
-import 'settlements_screen.dart';
-import 'analytics_screen.dart';
+import '../../widgets/custom_text_field.dart';
+import '../../providers/settings_provider.dart';
 
 class GroupDetailsScreen extends StatefulWidget {
   final String groupId;
@@ -23,64 +21,30 @@ class GroupDetailsScreen extends StatefulWidget {
   State<GroupDetailsScreen> createState() => _GroupDetailsScreenState();
 }
 
-class _GroupDetailsScreenState extends State<GroupDetailsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  final ExpenseService _expenseService = ExpenseService();
-
+class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   Map<String, UserModel> _memberCache = {};
+  Set<String> _knownMemberIds = {};
   bool _isLoadingMembers = true;
-  bool _initialized = false;
 
-  List<ExpenseModel> _expenses = [];
-  Map<String, double> _balances = {};
-  bool _isLoadingExpenses = true;
+  // Countdown timer for active invite code
+  Timer? _countdownTimer;
+  int _secondsRemaining = 0;
+  String? _trackedInviteCode;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_initialized) {
-      _initialized = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<GroupProvider>().selectGroup(widget.groupId);
-      _loadExpenses();
-    }
+    });
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _countdownTimer?.cancel();
+    context.read<GroupProvider>().clearSelectedGroup();
     super.dispose();
   }
-
-  Future<void> _loadExpenses() async {
-    _expenseService.getGroupExpenses(widget.groupId).listen((expenses) {
-      if (mounted) {
-        setState(() {
-          _expenses = expenses;
-          _isLoadingExpenses = false;
-        });
-        _calculateBalances();
-      }
-    });
-  }
-
-  Future<void> _calculateBalances() async {
-    final balances = await _expenseService.calculateBalances(widget.groupId);
-    if (mounted) {
-      setState(() {
-        _balances = balances;
-      });
-    }
-  }
-
-  double get _totalGroupExpenses =>
-      _expenses.fold(0.0, (sum, e) => sum + e.totalAmount);
 
   Future<void> _fetchMemberDetails(List<String> memberIds) async {
     if (memberIds.isEmpty) {
@@ -90,491 +54,1162 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen>
 
     try {
       final firestore = FirebaseFirestore.instance;
+      final Map<String, UserModel> newCache = {};
 
-      if (memberIds.length <= 10) {
+      for (int i = 0; i < memberIds.length; i += 10) {
+        final chunk = memberIds.sublist(
+          i,
+          (i + 10 > memberIds.length) ? memberIds.length : i + 10,
+        );
         final snapshot = await firestore
             .collection('users')
-            .where(FieldPath.documentId, whereIn: memberIds)
+            .where(FieldPath.documentId, whereIn: chunk)
             .get();
-
-        final Map<String, UserModel> cache = {};
         for (final doc in snapshot.docs) {
-          cache[doc.id] = UserModel.fromFirestore(doc);
+          newCache[doc.id] = UserModel.fromFirestore(doc);
         }
+      }
 
-        if (mounted) {
-          setState(() {
-            _memberCache = cache;
-            _isLoadingMembers = false;
-          });
-        }
+      if (mounted) {
+        setState(() {
+          _memberCache = newCache;
+          _isLoadingMembers = false;
+        });
       }
     } catch (e) {
       if (mounted) setState(() => _isLoadingMembers = false);
     }
   }
 
-  String _getMemberName(String userId) {
-    return _memberCache[userId]?.name ?? 'Unknown';
+  void _startCountdown(DateTime expiry) {
+    _countdownTimer?.cancel();
+    final remaining = expiry.difference(DateTime.now()).inSeconds;
+    if (remaining <= 0) {
+      setState(() => _secondsRemaining = 0);
+      return;
+    }
+    setState(() => _secondsRemaining = remaining);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final secs = expiry.difference(DateTime.now()).inSeconds;
+      if (secs <= 0) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+      } else {
+        setState(() => _secondsRemaining = secs);
+      }
+    });
   }
 
-  void _copyGroupCode(String code) {
+  String _formatCountdown(int seconds) {
+    if (seconds <= 0) return 'Expired';
+    final mins = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '$mins:${secs.toString().padLeft(2, '0')} left';
+  }
+
+  void _copyCode(String code) {
     Clipboard.setData(ClipboardData(text: code));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Group code copied!'),
+        content: Text('Invite code copied!'),
         backgroundColor: AppConstants.successColor,
+        duration: Duration(seconds: 2),
       ),
     );
   }
 
-  Future<void> _deleteExpense(ExpenseModel expense) async {
-    final result = await _expenseService.deleteExpense(
-      groupId: expense.groupId,
-      expenseId: expense.expenseId,
+  Future<void> _generateInviteCode(GroupModel group) async {
+    final userId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (userId == null) return;
+
+    final result = await context.read<GroupProvider>().generateInviteCode(
+      groupId: group.groupId,
+      userId: userId,
     );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result.success ? 'Expense deleted' : 'Failed to delete'),
-          backgroundColor:
-              result.success ? AppConstants.successColor : AppConstants.errorColor,
+          content: Text(
+            result.code != null
+                ? 'Invite code generated! Valid for 10 minutes.'
+                : result.error ?? 'Failed to generate invite code',
+          ),
+          backgroundColor: result.code != null
+              ? AppConstants.successColor
+              : AppConstants.errorColor,
         ),
       );
     }
   }
 
-  void _showDeleteExpenseDialog(ExpenseModel expense) {
+  void _showEditGroupDialog(GroupModel group) {
+    final requestingUserId =
+        context.read<AuthProvider>().firebaseUser?.uid ?? '';
+    final nameController = TextEditingController(text: group.groupName);
+    final descController =
+        TextEditingController(text: group.description ?? '');
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Expense'),
-        content: Text('Delete "${expense.description}"?'),
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        ),
+        title: const Text('Edit Group'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CustomTextField(
+                controller: nameController,
+                label: 'Group Name',
+                prefixIcon: Icons.group,
+              ),
+              const SizedBox(height: 16),
+              CustomTextField(
+                controller: descController,
+                label: 'Description (Optional)',
+                prefixIcon: Icons.description_outlined,
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(dialogCtx),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _deleteExpense(expense);
+            onPressed: () async {
+              final newName = nameController.text.trim();
+              if (newName.isEmpty) {
+                ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                  const SnackBar(
+                    content: Text('Group name cannot be empty'),
+                    backgroundColor: AppConstants.errorColor,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(dialogCtx);
+
+              final groupProvider = context.read<GroupProvider>();
+              final success = await groupProvider.updateGroup(
+                groupId: group.groupId,
+                requestingUserId: requestingUserId,
+                groupName: newName,
+                description: descController.text.trim(),
+              );
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      success ? 'Group updated!' : 'Failed to update group',
+                    ),
+                    backgroundColor: success
+                        ? AppConstants.successColor
+                        : AppConstants.errorColor,
+                  ),
+                );
+              }
             },
-            child: const Text('Delete',
-                style: TextStyle(color: AppConstants.errorColor)),
+            child: const Text('Save'),
           ),
         ],
       ),
     );
   }
 
-  void _showAddExpenseOptions(GroupModel group, String currentUserId) {
-    showModalBottomSheet(
+  // Shows a dialog explaining which members have outstanding balances
+  // blocking a group action (delete / leave).
+  void _showBlockedDialog({
+    required String title,
+    required String action,
+    required List<MapEntry<String, double>> unsettled,
+  }) {
+    final cs = context.read<SettingsProvider>().currencySymbol;
+    showDialog(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppConstants.defaultPadding),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Add Expense',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: AppConstants.primaryColor,
-                  child: Icon(Icons.document_scanner, color: Colors.white),
-                ),
-                title: const Text('Scan Receipt'),
-                subtitle: const Text('Use AI to extract data from receipt'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ScanReceiptScreen(
-                        group: group,
-                        currentUserId: currentUserId,
-                      ),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.grey[600],
-                  child: const Icon(Icons.edit, color: Colors.white),
-                ),
-                title: const Text('Manual Entry'),
-                subtitle: const Text('Enter expense details manually'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final result = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AddExpenseScreen(
-                        group: group,
-                        currentUserId: currentUserId,
-                      ),
-                    ),
-                  );
-                  if (result == true) {
-                    _calculateBalances();
-                  }
-                },
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
         ),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(fontSize: 17)),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'The following members have outstanding balances. '
+              'All balances must reach ${cs}0.00 before you can $action this group:',
+              style: TextStyle(color: Colors.grey[700], fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            ...unsettled.map((e) {
+              final memberId = e.key;
+              final amount = e.value;
+              final name =
+                  _memberCache[memberId]?.name ?? 'Member …${memberId.substring(memberId.length - 4)}';
+              final isOwed = amount > 0;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    Icon(
+                      isOwed ? Icons.arrow_circle_up : Icons.arrow_circle_down,
+                      size: 18,
+                      color: isOwed
+                          ? AppConstants.successColor
+                          : AppConstants.errorColor,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(name,
+                          style: const TextStyle(fontWeight: FontWeight.w500)),
+                    ),
+                    Text(
+                      isOwed
+                          ? '+$cs${amount.toStringAsFixed(2)}'
+                          : '−$cs${amount.abs().toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isOwed
+                            ? AppConstants.successColor
+                            : AppConstants.errorColor,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.08),
+                borderRadius:
+                    BorderRadius.circular(AppConstants.borderRadius),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lightbulb_outline,
+                      size: 16, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Go to the Settle Up tab to record payments and clear all balances.',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[700]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('OK'),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _showLeaveGroupDialog(
+    GroupModel group,
+    String userId,
+  ) async {
+    final balances =
+        await SettlementService().calculateBalances(group.groupId);
+    final userBalance = balances[userId] ?? 0;
+
+    if (userBalance.abs() > 0.01) {
+      if (!mounted) return;
+      _showBlockedDialog(
+        title: 'Cannot Leave Group',
+        action: 'leave',
+        unsettled: [MapEntry(userId, userBalance)],
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final groupProvider = context.read<GroupProvider>();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        ),
+        title: const Text('Leave Group'),
+        content: Text(
+          'Are you sure you want to leave "${group.groupName}"?\n\n'
+          'You will need a new invite code to rejoin.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              final success = await groupProvider.leaveGroup(
+                groupId: group.groupId,
+                userId: userId,
+              );
+              if (mounted) {
+                if (success) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('You have left the group'),
+                      backgroundColor: AppConstants.successColor,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        groupProvider.errorMessage ?? 'Failed to leave group',
+                      ),
+                      backgroundColor: AppConstants.errorColor,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text(
+              'Leave',
+              style: TextStyle(color: AppConstants.errorColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDeleteGroupDialog(
+    GroupModel group,
+    String userId,
+  ) async {
+    final balances =
+        await SettlementService().calculateBalances(group.groupId);
+    final unsettled =
+        balances.entries.where((e) => e.value.abs() > 0.01).toList();
+
+    if (unsettled.isNotEmpty) {
+      if (!mounted) return;
+      _showBlockedDialog(
+        title: 'Cannot Delete Group',
+        action: 'delete',
+        unsettled: unsettled,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final groupProvider = context.read<GroupProvider>();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        ),
+        title: const Text('Delete Group'),
+        content: Text(
+          'Are you sure you want to delete "${group.groupName}"?\n\n'
+          'This action cannot be undone. All group data will be lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              final success = await groupProvider.deleteGroup(
+                groupId: group.groupId,
+                userId: userId,
+              );
+              if (mounted) {
+                if (success) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Group deleted'),
+                      backgroundColor: AppConstants.successColor,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        groupProvider.errorMessage ?? 'Failed to delete group',
+                      ),
+                      backgroundColor: AppConstants.errorColor,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppConstants.errorColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showRemoveMemberDialog(
+    GroupModel group,
+    String memberId,
+    String memberName,
+  ) async {
+    final currentUserId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (currentUserId == null) return;
+
+    final balances =
+        await SettlementService().calculateBalances(group.groupId);
+    final memberBalance = balances[memberId] ?? 0;
+    if (memberBalance.abs() > 0.01) {
+      if (!mounted) return;
+      final cs = context.read<SettingsProvider>().currencySymbol;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$memberName has an outstanding balance of '
+            '$cs${memberBalance.abs().toStringAsFixed(2)}. Settle up first.',
+          ),
+          backgroundColor: AppConstants.errorColor,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final groupProvider = context.read<GroupProvider>();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        ),
+        title: const Text('Remove Member'),
+        content: Text('Remove $memberName from the group?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              final success = await groupProvider.removeMember(
+                groupId: group.groupId,
+                memberId: memberId,
+                requestingUserId: currentUserId,
+              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      success
+                          ? '$memberName removed from group'
+                          : 'Failed to remove member',
+                    ),
+                    backgroundColor: success
+                        ? AppConstants.successColor
+                        : AppConstants.errorColor,
+                  ),
+                );
+              }
+            },
+            child: const Text(
+              'Remove',
+              style: TextStyle(color: AppConstants.errorColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _assignAdmin(
+    GroupModel group,
+    String memberId,
+    String memberName,
+  ) async {
+    final currentUserId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (currentUserId == null) return;
+    final groupProvider = context.read<GroupProvider>();
+
+    final success = await groupProvider.assignAdmin(
+      groupId: group.groupId,
+      targetUserId: memberId,
+      requestingUserId: currentUserId,
+    );
+    final errorMsg = groupProvider.errorMessage;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '$memberName is now an admin'
+                : errorMsg ?? 'Failed to assign admin',
+          ),
+          backgroundColor:
+              success ? AppConstants.successColor : AppConstants.errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeAdminRole(
+    GroupModel group,
+    String memberId,
+    String memberName,
+  ) async {
+    final currentUserId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (currentUserId == null) return;
+    final groupProvider = context.read<GroupProvider>();
+
+    final success = await groupProvider.removeAdmin(
+      groupId: group.groupId,
+      targetUserId: memberId,
+      requestingUserId: currentUserId,
+    );
+    final errorMsg = groupProvider.errorMessage;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '$memberName is no longer an admin'
+                : errorMsg ?? 'Failed to remove admin',
+          ),
+          backgroundColor:
+              success ? AppConstants.successColor : AppConstants.errorColor,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final currentUserId = context.watch<AuthProvider>().firebaseUser?.uid;
-    final groupProvider = context.watch<GroupProvider>();
-    final group = groupProvider.selectedGroup;
 
-    if (group == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Group Details'),
-          backgroundColor: AppConstants.primaryColor,
-          foregroundColor: Colors.white,
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppConstants.primaryColor),
-        ),
-      );
-    }
+    return Consumer<GroupProvider>(
+      builder: (context, groupProvider, child) {
+        final group = groupProvider.selectedGroup;
 
-    if (_memberCache.isEmpty && _isLoadingMembers) {
-      _fetchMemberDetails(group.members);
-    }
+        if (group == null) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Group Details'),
+              backgroundColor: AppConstants.primaryColor,
+              foregroundColor: Colors.white,
+            ),
+            body: const Center(
+              child: CircularProgressIndicator(
+                color: AppConstants.primaryColor,
+              ),
+            ),
+          );
+        }
 
-    return Scaffold(
-      backgroundColor: AppConstants.backgroundColor,
-      appBar: AppBar(
-        title: Text(group.groupName),
-        backgroundColor: AppConstants.primaryColor,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.analytics),
-            tooltip: 'Analytics',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => AnalyticsScreen(group: group),
+        final isOwner = group.isOwner(currentUserId ?? '');
+        final isAdmin = group.isAdmin(currentUserId ?? '');
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+
+          // Refresh member list when members change
+          final currentIds = group.members.toSet();
+          if (currentIds.length != _knownMemberIds.length ||
+              !currentIds.every(_knownMemberIds.contains)) {
+            _knownMemberIds = currentIds;
+            _fetchMemberDetails(group.members);
+          }
+
+          // Start/stop invite countdown when invite changes
+          final newCode =
+              group.hasActiveInvite ? group.activeInviteCode : null;
+          if (newCode != _trackedInviteCode) {
+            _trackedInviteCode = newCode;
+            if (newCode != null && group.activeInviteExpiry != null) {
+              _startCountdown(group.activeInviteExpiry!);
+            } else {
+              _countdownTimer?.cancel();
+              _countdownTimer = null;
+            }
+          }
+        });
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(group.groupName),
+            backgroundColor: AppConstants.primaryColor,
+            foregroundColor: Colors.white,
+            actions: [
+              if (isAdmin)
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _showEditGroupDialog(group),
+                  tooltip: 'Edit Group',
                 ),
-              );
-            },
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  switch (value) {
+                    case 'leave':
+                      _showLeaveGroupDialog(group, currentUserId!);
+                      break;
+                    case 'delete':
+                      _showDeleteGroupDialog(group, currentUserId!);
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (!isOwner)
+                    const PopupMenuItem(
+                      value: 'leave',
+                      child: Row(
+                        children: [
+                          Icon(Icons.exit_to_app,
+                              color: AppConstants.errorColor),
+                          SizedBox(width: 12),
+                          Text('Leave Group'),
+                        ],
+                      ),
+                    ),
+                  if (isOwner)
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: AppConstants.errorColor),
+                          SizedBox(width: 12),
+                          Text('Delete Group'),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(text: 'Expenses'),
-            Tab(text: 'Balances'),
-            Tab(text: 'Members'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildExpensesTab(),
-          _buildBalancesTab(group, currentUserId ?? ''),
-          _buildMembersTab(group),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          _showAddExpenseOptions(group, currentUserId ?? '');
-        },
-        backgroundColor: AppConstants.primaryColor,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Expense'),
-      ),
-    );
-  }
-
-  Widget _buildExpensesTab() {
-    if (_isLoadingExpenses) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppConstants.primaryColor),
-      );
-    }
-
-    if (_expenses.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.receipt_long, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            const Text('No expenses yet',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('Tap "Add Expense" to get started',
-                style: TextStyle(color: Colors.grey[600])),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      itemCount: _expenses.length,
-      itemBuilder: (context, index) {
-        final expense = _expenses[index];
-        return _buildExpenseCard(expense);
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppConstants.defaultPadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildGroupInfoCard(group),
+                const SizedBox(height: 16),
+                _buildInviteCodeCard(group, isAdmin),
+                const SizedBox(height: 16),
+                _buildMembersCard(group, isOwner, isAdmin, currentUserId ?? ''),
+              ],
+            ),
+          ),
+        );
       },
     );
   }
 
-  Widget _buildExpenseCard(ExpenseModel expense) {
-    final payerName = _getMemberName(expense.paidBy);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onLongPress: () => _showDeleteExpenseDialog(expense),
-        child: Padding(
-          padding: const EdgeInsets.all(AppConstants.defaultPadding),
-          child: Row(
+  Widget _buildGroupInfoCard(GroupModel group) {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.largePadding),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppConstants.primaryColor.withOpacity(0.1),
+                  color: AppConstants.primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.receipt, color: AppConstants.primaryColor),
+                child: const Icon(
+                  Icons.group,
+                  color: AppConstants.primaryColor,
+                  size: 28,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(expense.description,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(
+                      group.groupName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text('$payerName paid',
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                    Text(
+                      '${group.memberCount} member${group.memberCount != 1 ? 's' : ''}',
+                      style:
+                          TextStyle(color: Colors.grey[600], fontSize: 14),
+                    ),
                   ],
                 ),
               ),
+            ],
+          ),
+          if (group.description != null &&
+              group.description!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Text(
+              group.description!,
+              style: TextStyle(color: Colors.grey[700], fontSize: 14),
+            ),
+          ],
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.calendar_today, size: 16, color: Colors.grey[500]),
+              const SizedBox(width: 8),
               Text(
-                '£${expense.totalAmount.toStringAsFixed(2)}',
-                style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppConstants.primaryColor),
+                'Created ${_formatDate(group.createdAt)}',
+                style: TextStyle(color: Colors.grey[500], fontSize: 13),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildBalancesTab(GroupModel group, String currentUserId) {
-    if (_isLoadingExpenses) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppConstants.primaryColor),
-      );
-    }
+  Widget _buildInviteCodeCard(GroupModel group, bool isAdmin) {
+    final hasActive = group.hasActiveInvite;
 
-    if (_balances.isEmpty && _expenses.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.account_balance_wallet, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            const Text('No balances yet',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.largePadding),
+      decoration: BoxDecoration(
+        color: hasActive
+            ? AppConstants.primaryColor.withValues(alpha: 0.08)
+            : Colors.grey[50],
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        border: Border.all(
+          color: hasActive
+              ? AppConstants.primaryColor.withValues(alpha: 0.3)
+              : Colors.grey[300]!,
         ),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(AppConstants.largePadding),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppConstants.primaryColor, AppConstants.secondaryColor],
-            ),
-            borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-          ),
-          child: Column(
+      ),
+      child: Column(
+        children: [
+          // Header row
+          Row(
             children: [
-              const Text('Total Expenses', style: TextStyle(color: Colors.white70)),
-              const SizedBox(height: 8),
-              Text(
-                '£${_totalGroupExpenses.toStringAsFixed(2)}',
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
+              Icon(
+                Icons.link,
+                size: 18,
+                color:
+                    hasActive ? AppConstants.primaryColor : Colors.grey[500],
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Settle Up Button
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => SettlementsScreen(
-                    group: group,
-                    currentUserId: currentUserId,
+              const SizedBox(width: 8),
+              Text(
+                'Invite Code',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: hasActive ? Colors.black87 : Colors.grey[600],
+                ),
+              ),
+              if (hasActive) ...[
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppConstants.successColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.timer_outlined,
+                          size: 12, color: AppConstants.successColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatCountdown(_secondsRemaining),
+                        style: const TextStyle(
+                          color: AppConstants.successColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              );
-            },
-            icon: const Icon(Icons.handshake),
-            label: const Text('Settle Up'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppConstants.successColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
+              ],
+            ],
           ),
-        ),
+          const SizedBox(height: 16),
 
-        const SizedBox(height: 24),
-        const Text('Member Balances',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        ...group.members.map((memberId) {
-          final balance = _balances[memberId] ?? 0;
-          final isPositive = balance >= 0;
-
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: isPositive
-                    ? AppConstants.successColor.withOpacity(0.2)
-                    : AppConstants.errorColor.withOpacity(0.2),
-                child: Text(
-                  _getMemberName(memberId).isNotEmpty
-                      ? _getMemberName(memberId)[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                      color: isPositive
-                          ? AppConstants.successColor
-                          : AppConstants.errorColor),
+          if (hasActive) ...[
+            // Tap-to-copy code display
+            GestureDetector(
+              onTap: () => _copyCode(group.activeInviteCode!),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius:
+                      BorderRadius.circular(AppConstants.borderRadius),
+                  border: Border.all(
+                    color:
+                        AppConstants.primaryColor.withValues(alpha: 0.4),
+                    width: 2,
+                  ),
                 ),
-              ),
-              title: Text(_getMemberName(memberId)),
-              subtitle: Text(isPositive ? 'gets back' : 'owes',
-                  style: TextStyle(
-                      color: isPositive
-                          ? AppConstants.successColor
-                          : AppConstants.errorColor)),
-              trailing: Text(
-                '£${balance.abs().toStringAsFixed(2)}',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: isPositive
-                        ? AppConstants.successColor
-                        : AppConstants.errorColor),
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  Widget _buildMembersTab(GroupModel group) {
-    return ListView(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(AppConstants.largePadding),
-          decoration: BoxDecoration(
-            color: AppConstants.primaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-          ),
-          child: Column(
-            children: [
-              const Text('Group Code'),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    group.groupCode,
-                    style: const TextStyle(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      group.activeInviteCode!,
+                      style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 6,
-                        color: AppConstants.primaryColor),
+                        color: AppConstants.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.copy,
+                        color: AppConstants.primaryColor, size: 20),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tap to copy  •  Valid for 10 minutes from generation',
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
+            ),
+            if (isAdmin) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _generateInviteCode(group),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Generate New Code'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppConstants.primaryColor,
+                  side: const BorderSide(color: AppConstants.primaryColor),
+                ),
+              ),
+            ],
+          ] else ...[
+            if (isAdmin)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _generateInviteCode(group),
+                  icon: const Icon(Icons.add_link),
+                  label: const Text('Generate Invite Code'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppConstants.primaryColor,
+                    foregroundColor: Colors.white,
                   ),
-                  IconButton(
-                    onPressed: () => _copyGroupCode(group.groupCode),
-                    icon: const Icon(Icons.copy, color: AppConstants.primaryColor),
+                ),
+              )
+            else
+              Text(
+                'No active invite code.\nAsk an admin to generate one.',
+                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMembersCard(
+    GroupModel group,
+    bool isOwner,
+    bool isAdmin,
+    String currentUserId,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.largePadding),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.people, color: AppConstants.primaryColor),
+              const SizedBox(width: 12),
+              const Text(
+                'Members',
+                style:
+                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${group.memberCount}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppConstants.primaryColor,
                   ),
-                ],
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 24),
-        Text('Members (${group.memberCount})',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        ...group.members.map((memberId) {
-          final isGroupOwner = group.createdBy == memberId;
+          const SizedBox(height: 16),
 
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor:
-                    isGroupOwner ? AppConstants.primaryColor : Colors.grey[300],
-                child: Text(
-                  _getMemberName(memberId).isNotEmpty
-                      ? _getMemberName(memberId)[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                      color: isGroupOwner ? Colors.white : Colors.black87),
+          if (_isLoadingMembers)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: CircularProgressIndicator(
+                  color: AppConstants.primaryColor,
                 ),
               ),
-              title: Text(_getMemberName(memberId)),
-              subtitle: isGroupOwner
-                  ? const Text('Owner',
-                      style: TextStyle(color: AppConstants.primaryColor))
-                  : null,
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: group.members.length,
+              separatorBuilder: (_, _) => const Divider(),
+              itemBuilder: (context, index) {
+                final memberId = group.members[index];
+                final member = _memberCache[memberId];
+                final isGroupOwner = group.createdBy == memberId;
+                final isMemberAdmin = group.adminIds.contains(memberId);
+                final isCurrentUser = memberId == currentUserId;
+
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: isGroupOwner
+                        ? AppConstants.primaryColor
+                        : isMemberAdmin
+                            ? Colors.orange.shade600
+                            : Colors.grey[300],
+                    child: Text(
+                      member?.name.isNotEmpty == true
+                          ? member!.name[0].toUpperCase()
+                          : '?',
+                      style: TextStyle(
+                        color: isGroupOwner || isMemberAdmin
+                            ? Colors.white
+                            : Colors.black87,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  title: Row(
+                    children: [
+                      Text(
+                        member?.name ?? 'Unknown User',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (isCurrentUser)
+                        const Text(
+                          ' (You)',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.normal,
+                          ),
+                        ),
+                    ],
+                  ),
+                  subtitle: isGroupOwner
+                      ? const Text(
+                          'Owner',
+                          style: TextStyle(
+                            color: AppConstants.primaryColor,
+                            fontSize: 12,
+                          ),
+                        )
+                      : isMemberAdmin
+                          ? const Text(
+                              'Admin',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 12,
+                              ),
+                            )
+                          : null,
+                  trailing: _buildMemberTrailing(
+                    group,
+                    memberId,
+                    member,
+                    isGroupOwner,
+                    isMemberAdmin,
+                    isCurrentUser,
+                    isOwner,
+                    isAdmin,
+                  ),
+                );
+              },
             ),
-          );
-        }),
-      ],
+        ],
+      ),
     );
+  }
+
+  Widget? _buildMemberTrailing(
+    GroupModel group,
+    String memberId,
+    UserModel? member,
+    bool isGroupOwner,
+    bool isMemberAdmin,
+    bool isCurrentUser,
+    bool isOwner,
+    bool isAdmin,
+  ) {
+    if (isCurrentUser || isGroupOwner) return null;
+    final memberName = member?.name ?? 'this member';
+
+    if (isOwner) {
+      return PopupMenuButton<String>(
+        icon: Icon(Icons.more_vert, size: 20, color: Colors.grey[500]),
+        tooltip: 'Member options',
+        onSelected: (value) async {
+          switch (value) {
+            case 'make_admin':
+              await _assignAdmin(group, memberId, memberName);
+              break;
+            case 'remove_admin':
+              await _removeAdminRole(group, memberId, memberName);
+              break;
+            case 'remove':
+              await _showRemoveMemberDialog(group, memberId, memberName);
+              break;
+          }
+        },
+        itemBuilder: (_) {
+          return <PopupMenuEntry<String>>[
+            if (!isMemberAdmin)
+              PopupMenuItem<String>(
+                value: 'make_admin',
+                child: Row(
+                  children: [
+                    const Icon(Icons.admin_panel_settings_outlined,
+                        color: Colors.orange),
+                    const SizedBox(width: 12),
+                    const Text('Make Admin'),
+                  ],
+                ),
+              ),
+            if (isMemberAdmin)
+              PopupMenuItem<String>(
+                value: 'remove_admin',
+                child: Row(
+                  children: [
+                    const Icon(Icons.remove_moderator,
+                        color: Colors.orange),
+                    const SizedBox(width: 12),
+                    const Text('Remove Admin'),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
+            PopupMenuItem<String>(
+              value: 'remove',
+              child: Row(
+                children: [
+                  const Icon(Icons.remove_circle_outline,
+                      color: AppConstants.errorColor),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Remove from Group',
+                    style: TextStyle(color: AppConstants.errorColor),
+                  ),
+                ],
+              ),
+            ),
+          ];
+        },
+      );
+    }
+
+    // Non-owner admin can only remove regular members
+    if (isAdmin && !isMemberAdmin) {
+      return IconButton(
+        icon: const Icon(Icons.remove_circle_outline,
+            color: AppConstants.errorColor),
+        onPressed: () =>
+            _showRemoveMemberDialog(group, memberId, memberName),
+        tooltip: 'Remove member',
+      );
+    }
+
+    return null;
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }
