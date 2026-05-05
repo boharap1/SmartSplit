@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
+
+# Firebase Cloud Functions — credentials and generated files
+functions/.env
+functions/.env.local
+functions/node_modules/
+
+# Claude Code — local-only IDE settings (not project config)
+.claude/
+
