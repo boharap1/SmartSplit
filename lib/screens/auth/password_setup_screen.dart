@@ -56,8 +56,12 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(err), backgroundColor: AppConstants.errorColor),
       );
+      return;
     }
-    // On success AuthWrapper routes to MainNavigation automatically.
+
+    // AuthWrapper has rebuilt with MainNavigation at the root route.
+    // Pop every pushed screen (OTP, PasswordSetup) so that root becomes visible.
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override
