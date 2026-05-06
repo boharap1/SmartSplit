@@ -25,6 +25,9 @@ class AuthProvider extends ChangeNotifier {
   bool _biometricEnabled  = false;
   bool _biometricUnlocked = false; // true after successful lock-screen auth
 
+  // ── Registration state ────────────────────────────────────────────────────
+  bool _justRegistered = false; // consumed once by MainNavigation for welcome message
+
   // ── Getters ───────────────────────────────────────────────────────────────
 
   AuthStatus get status          => _status;
@@ -36,6 +39,12 @@ class AuthProvider extends ChangeNotifier {
   User?      get firebaseUser    => _authService.currentUser;
   bool get biometricEnabled      => _biometricEnabled;
   bool get biometricUnlocked     => _biometricUnlocked;
+  bool get justRegistered        => _justRegistered;
+
+  /// Call once from MainNavigation to consume the flag and show a welcome message.
+  void consumeJustRegistered() {
+    _justRegistered = false;
+  }
 
   // ── Initialise ────────────────────────────────────────────────────────────
 
@@ -135,6 +144,7 @@ class AuthProvider extends ChangeNotifier {
     _user              = result.user;
     _status            = AuthStatus.authenticated;
     _biometricUnlocked = true;
+    _justRegistered    = true;
     await SecureStorageManager.instance.saveLastEmail(email);
 
     // Sync the fresh emailVerified flag into the in-memory user object.

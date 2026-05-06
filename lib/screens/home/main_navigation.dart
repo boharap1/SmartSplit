@@ -28,6 +28,28 @@ class _MainNavigationState extends State<MainNavigation> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowWelcome());
+  }
+
+  void _maybeShowWelcome() {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.justRegistered) return;
+    auth.consumeJustRegistered();
+    final firstName = auth.user?.name.split(' ').first ?? 'there';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Welcome to SmartSplit, $firstName! Your account is ready.'),
+        backgroundColor: AppConstants.successColor,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_initialized) {

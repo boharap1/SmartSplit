@@ -16,6 +16,7 @@ import 'screens/auth/login_screen.dart';
 import 'screens/home/main_navigation.dart';
 import 'utils/app_theme.dart';
 import 'utils/constants.dart';
+import 'widgets/app_logo.dart';
 
 @pragma('vm:entry-point')
 Future<void> _onBackgroundMessage(RemoteMessage _) async {}
@@ -121,26 +122,14 @@ class AuthWrapper extends StatelessWidget {
 class _SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.receipt_long_rounded,
-              size: 80,
-              color: AppConstants.primaryColor,
-            ),
-            const SizedBox(height: 24),
-            Text(
-              AppConstants.appName,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 24),
-            const CircularProgressIndicator(color: AppConstants.primaryColor),
+            AppLogoWithWordmark(logoSize: 96),
+            SizedBox(height: 48),
+            CircularProgressIndicator(color: AppConstants.primaryColor),
           ],
         ),
       ),
