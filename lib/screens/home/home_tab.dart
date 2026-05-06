@@ -456,7 +456,7 @@ class _HomeTabState extends State<HomeTab> {
     final groups = context.read<GroupProvider>().groups;
     final userId = context.read<AuthProvider>().firebaseUser?.uid ?? '';
     if (groups.isEmpty) {
-      _noGroups();
+      _showNoGroupsPrompt('scan receipts');
       return;
     }
 
@@ -493,7 +493,7 @@ class _HomeTabState extends State<HomeTab> {
     final groups = context.read<GroupProvider>().groups;
     final userId = context.read<AuthProvider>().firebaseUser?.uid ?? '';
     if (groups.isEmpty) {
-      _noGroups();
+      _showNoGroupsPrompt('add expenses');
       return;
     }
     if (groups.length == 1) {
@@ -623,12 +623,112 @@ class _HomeTabState extends State<HomeTab> {
     }
   }
 
-  void _noGroups() => ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Create a group first'),
-      backgroundColor: AppConstants.errorColor,
-    ),
-  );
+  void _showNoGroupsPrompt(String featureName) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.group_outlined,
+                  color: AppConstants.primaryColor,
+                  size: 36,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No Groups Yet',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You need to be part of a group to $featureName. Create a new group or join an existing one to get started.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[600], height: 1.5),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.link_rounded),
+                      label: const Text('Join Group'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppConstants.primaryColor,
+                        side: const BorderSide(color: AppConstants.primaryColor),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final messenger = ScaffoldMessenger.of(context);
+                        final name = await Navigator.push<String>(
+                          context,
+                          MaterialPageRoute(builder: (_) => const JoinGroupScreen()),
+                        );
+                        if (name != null && mounted) {
+                          messenger.showSnackBar(SnackBar(
+                            content: Text('Joined "$name" successfully!'),
+                            backgroundColor: AppConstants.successColor,
+                          ));
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.group_add_rounded),
+                      label: const Text('Create Group'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppConstants.primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final messenger = ScaffoldMessenger.of(context);
+                        final name = await Navigator.push<String>(
+                          context,
+                          MaterialPageRoute(builder: (_) => const CreateGroupScreen()),
+                        );
+                        if (name != null && mounted) {
+                          messenger.showSnackBar(SnackBar(
+                            content: Text('Group "$name" created successfully!'),
+                            backgroundColor: AppConstants.successColor,
+                          ));
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   void _pickGroup(String title, void Function(GroupModel) onPick) {
     final groups = context.read<GroupProvider>().groups;
