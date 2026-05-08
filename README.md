@@ -34,10 +34,20 @@ The application combines on-device receipt recognition, real-time multi-device s
 
 ## Screenshots
 
-
-| Home | Scan Receipt | Settlement | Analytics |
-|---|---|---|---|
-| ![Home](docs/screenshots/home.png) | ![Scan](docs/screenshots/scan.png) | ![Settle](docs/screenshots/settle.png) | ![Analytics](docs/screenshots/analytics.png) |
+<table>
+  <tr>
+    <td align="center"><strong>Home</strong></td>
+    <td align="center"><strong>Scan Receipt</strong></td>
+    <td align="center"><strong>Settlement</strong></td>
+    <td align="center"><strong>Analytics</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/home.png" width="220" alt="Home screen"></td>
+    <td><img src="docs/screenshots/scan.png" width="220" alt="Scan Receipt"></td>
+    <td><img src="docs/screenshots/settle.png" width="220" alt="Settlement"></td>
+    <td><img src="docs/screenshots/analytics.png" width="220" alt="Analytics"></td>
+  </tr>
+</table>
 
 ---
 
