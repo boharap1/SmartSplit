@@ -45,6 +45,29 @@ The application combines on-device receipt recognition, real-time multi-device s
 
 SmartSplit follows a three-tier architecture:
 
+```
+┌─────────────────────────────────────────────────────────┐
+│  Flutter Client (Android)                               │
+│  ├─ Presentation Layer (Screens & Widgets)              │
+│  ├─ State Layer (AuthProvider, GroupProvider,           │
+│  │                ExpenseProvider)                      │
+│  └─ Service Layer (Auth, Group, Expense, Settlement,    │
+│                    OCR, Analytics, Biometric)           │
+└─────────────────────┬───────────────────────────────────┘
+                      │ Firebase SDKs
+┌─────────────────────▼───────────────────────────────────┐
+│  Firebase Backend                                       │
+│  ├─ Authentication (email/password + verified email)    │
+│  ├─ Cloud Firestore (real-time NoSQL)                   │
+│  ├─ Cloud Functions (Node.js — OTP & notifications)     │
+│  ├─ Cloud Messaging (FCM push notifications)            │
+│  ├─ App Distribution (tester builds)                    │
+│  └─ Crashlytics (error reporting)                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+The settlement algorithm executes client-side; OCR runs entirely on-device via ML Kit.
+
 The settlement algorithm executes client-side; OCR runs entirely on-device via ML Kit.
 
 ---
@@ -114,6 +137,24 @@ Functional, security, and pilot user-acceptance testing are documented in Chapte
 ---
 
 ## Project Structure
+
+```
+SmartSplit/
+├── lib/
+│   ├── main.dart                  # Application entry point
+│   ├── models/                    # Data models (User, Group, Expense, etc.)
+│   ├── providers/                 # State management (Auth, Group, Expense)
+│   ├── services/                  # Firebase services + business logic
+│   │   └── settlement_algorithm.dart  # MCMF implementation
+│   ├── screens/                   # UI screens
+│   ├── widgets/                   # Reusable components
+│   └── utils/                     # Helpers (encryption, validation, etc.)
+├── functions/                     # Cloud Functions (Node.js)
+│   └── index.js                   # OTP, notifications, account management
+├── test/                          # Unit tests
+├── android/                       # Android platform configuration
+└── docs/                          # Documentation and screenshots
+```
 
 ---
 
