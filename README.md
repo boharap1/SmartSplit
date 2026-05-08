@@ -34,7 +34,6 @@ The application combines on-device receipt recognition, real-time multi-device s
 
 ## Screenshots
 
-> *[Insert 3–4 representative screenshots here. Recommended: Home screen, Receipt Scanning, Settlement Plan, Analytics Dashboard]*
 
 | Home | Scan Receipt | Settlement | Analytics |
 |---|---|---|---|
