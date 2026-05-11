@@ -55,6 +55,9 @@ dependencies:
   # SVG rendering
   flutter_svg: ^2.0.10+1
 
+  # Audio feedback
+  audioplayers: ^6.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

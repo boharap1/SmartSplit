@@ -7,12 +7,14 @@ import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/group_model.dart';
 import '../../models/expense_model.dart';
+import '../../models/user_model.dart';
 import '../../utils/constants.dart';
 import '../group/group_details_screen.dart';
 import '../group/create_group_screen.dart';
 import '../group/join_group_screen.dart';
 import '../group/scan_receipt_screen.dart';
 import '../group/add_expense_screen.dart';
+import '../group/settlements_screen.dart';
 import 'app_menu.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -82,7 +84,7 @@ class _HomeTabState extends State<HomeTab> {
         color: AppConstants.primaryColor,
         child: CustomScrollView(
           slivers: [
-            _buildHeader(user?.name ?? 'User'),
+            _buildHeader(user),
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -114,7 +116,11 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  Widget _buildHeader(String userName) {
+  Widget _buildHeader(UserModel? user) {
+    final userName = user?.name ?? 'User';
+    final initials = _getInitials(userName);
+    final hasPhoto = user?.hasProfilePicture ?? false;
+
     return SliverAppBar(
       expandedHeight: 120,
       floating: false,
@@ -132,16 +138,41 @@ class _HomeTabState extends State<HomeTab> {
           ),
           child: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+              padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
               child: Row(
                 children: [
-                  // App menu (left)
-                  IconButton(
-                    onPressed: () => showAppMenu(context),
-                    icon: const Icon(
-                      Icons.menu_rounded,
-                      color: Colors.white,
-                      size: 26,
+                  // Profile avatar — opens app menu
+                  GestureDetector(
+                    onTap: () => showAppMenu(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          width: 2,
+                        ),
+                      ),
+                      child: CircleAvatar(
+                        radius: 18,
+                        backgroundColor:
+                            Colors.white.withValues(alpha: 0.25),
+                        backgroundImage: hasPhoto
+                            ? NetworkImage(user!.profilePicture!)
+                            : null,
+                        child: hasPhoto
+                            ? null
+                            : Text(
+                                initials,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
                     ),
                   ),
                   // Greeting (center)
@@ -203,7 +234,54 @@ class _HomeTabState extends State<HomeTab> {
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Balance Overview',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: AppConstants.primaryColor.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppConstants.primaryColor.withValues(alpha: 0.15),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.group_outlined,
+                      size: 12,
+                      color: AppConstants.primaryColor.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'All Groups · All Time',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color:
+                            AppConstants.primaryColor.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
@@ -309,19 +387,19 @@ class _HomeTabState extends State<HomeTab> {
           children: [
             Expanded(
               child: _actionCard(
-                Icons.document_scanner_rounded,
-                'Scan\nReceipt',
-                const Color(0xFF5C6BC0),
-                _handleScanReceipt,
+                Icons.add_circle_outline_rounded,
+                'Add\nExpense',
+                AppConstants.primaryColor,
+                _handleAddExpense,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _actionCard(
-                Icons.add_circle_outline_rounded,
-                'Add\nExpense',
-                AppConstants.primaryColor,
-                _handleAddExpense,
+                Icons.handshake_outlined,
+                'Settle\nUp',
+                const Color(0xFF5C6BC0),
+                _handleSettleUp,
               ),
             ),
             const SizedBox(width: 12),
@@ -452,41 +530,36 @@ class _HomeTabState extends State<HomeTab> {
     return completer.future;
   }
 
-  Future<void> _handleScanReceipt() async {
+  void _handleSettleUp() {
     final groups = context.read<GroupProvider>().groups;
     final userId = context.read<AuthProvider>().firebaseUser?.uid ?? '';
     if (groups.isEmpty) {
-      _showNoGroupsPrompt('scan receipts');
+      _showNoGroupsPrompt('settle up');
       return;
     }
-
-    Future<void> launchScan(GroupModel g) async {
-      final source = await _pickScanSource();
-      if (source == null || !mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      final groupName = await Navigator.push<String>(
+    if (groups.length == 1) {
+      Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ScanReceiptScreen(
-            group: g,
+          builder: (_) => SettlementsScreen(
+            group: groups.first,
             currentUserId: userId,
-            initialSource: source,
           ),
         ),
       );
-      if (groupName != null && mounted) {
-        messenger.showSnackBar(SnackBar(
-          content: Text('Expense added to "$groupName" successfully!'),
-          backgroundColor: AppConstants.successColor,
-        ));
-      }
-    }
-
-    if (groups.length == 1) {
-      await launchScan(groups.first);
       return;
     }
-    _pickGroup('Scan receipt for which group?', launchScan);
+    _pickGroup('Settle up for which group?', (g) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SettlementsScreen(
+            group: g,
+            currentUserId: userId,
+          ),
+        ),
+      );
+    });
   }
 
   void _handleAddExpense() {
@@ -975,6 +1048,14 @@ class _HomeTabState extends State<HomeTab> {
     if (h < 12) return 'morning';
     if (h < 17) return 'afternoon';
     return 'evening';
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
   }
 }
 

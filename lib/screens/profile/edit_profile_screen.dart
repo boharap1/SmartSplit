@@ -6,6 +6,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/sound_service.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/constants.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -139,19 +141,42 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     try {
       final authProvider = context.read<AuthProvider>();
-      final uid          = authProvider.firebaseUser!.uid;
+      final uid          = authProvider.firebaseUser?.uid;
+      if (uid == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Session expired. Please sign in again.'),
+            backgroundColor: AppConstants.errorColor,
+          ),
+        );
+        setState(() => _isSaving = false);
+        return;
+      }
       String? newPhotoUrl;
 
       // Upload new image
       if (_pickedImage != null) {
-        final ref = FirebaseStorage.instance
-            .ref()
-            .child('profile_pictures/$uid.jpg');
-        final task = await ref.putFile(
-          _pickedImage!,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-        newPhotoUrl = await task.ref.getDownloadURL();
+        try {
+          final ref = FirebaseStorage.instance
+              .ref()
+              .child('profile_pictures/$uid.jpg');
+          final task = await ref.putFile(
+            _pickedImage!,
+            SettableMetadata(contentType: 'image/jpeg'),
+          );
+          newPhotoUrl = await task.ref.getDownloadURL();
+        } on FirebaseException catch (e, s) {
+          AppLogger.error('EditProfileScreen.uploadPhoto', e, s);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to upload photo. Please try again.'),
+                backgroundColor: AppConstants.errorColor,
+              ),
+            );
+          }
+          return;
+        }
       } else if (_removePhoto) {
         newPhotoUrl = ''; // empty string signals "cleared"
       }
@@ -165,6 +190,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!mounted) return;
 
       if (success) {
+        SoundService.instance.playSuccess(); // fire-and-forget
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Profile updated successfully!'),
@@ -181,7 +207,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         );
       }
-    } catch (_) {
+    } catch (e, s) {
+      AppLogger.error('EditProfileScreen._save', e, s);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -368,7 +395,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _buildAvatar(UserModel? user) {
     final showPicked  = _pickedImage != null;
-    final showNetwork = !_removePhoto && !showPicked && user!.hasProfilePicture;
+    final showNetwork = !_removePhoto && !showPicked && (user?.hasProfilePicture == true);
     final initials    = _initials(user?.name ?? '');
 
     return Container(
@@ -386,7 +413,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ? Image.file(_pickedImage!, fit: BoxFit.cover)
             : showNetwork
                 ? Image.network(
-                    user.profilePicture!,
+                    user!.profilePicture!,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => _initialsWidget(initials),
                   )

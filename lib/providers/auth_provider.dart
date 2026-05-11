@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/biometric_service.dart';
 import '../services/otp_service.dart';
 import '../services/secure_storage_manager.dart';
+import '../utils/app_logger.dart';
 
 enum AuthStatus {
   initial,
@@ -259,31 +260,42 @@ class AuthProvider extends ChangeNotifier {
     String? gender,
   }) async {
     final uid = firebaseUser?.uid;
-    if (uid == null) return false;
+    if (uid == null) {
+      _errorMessage = 'Session expired. Please sign in again.';
+      notifyListeners();
+      return false;
+    }
 
-    final result = await _authService.updateProfile(
-      uid:            uid,
-      name:           name,
-      phoneNumber:    phoneNumber,
-      profilePicture: profilePicture,
-      dob:            dob,
-      gender:         gender,
-    );
-
-    if (result.success) {
-      _user = _user?.copyWith(
+    try {
+      final result = await _authService.updateProfile(
+        uid:            uid,
         name:           name,
         phoneNumber:    phoneNumber,
         profilePicture: profilePicture,
         dob:            dob,
         gender:         gender,
       );
-      _errorMessage = null;
-    } else {
-      _errorMessage = result.error;
+
+      if (result.success) {
+        _user = _user?.copyWith(
+          name:           name,
+          phoneNumber:    phoneNumber,
+          profilePicture: profilePicture,
+          dob:            dob,
+          gender:         gender,
+        );
+        _errorMessage = null;
+      } else {
+        _errorMessage = result.error;
+      }
+      notifyListeners();
+      return result.success;
+    } catch (e, s) {
+      AppLogger.error('AuthProvider.updateProfile', e, s);
+      _errorMessage = 'Failed to update profile. Please try again.';
+      notifyListeners();
+      return false;
     }
-    notifyListeners();
-    return result.success;
   }
 
   Future<void> refreshProfile() async {

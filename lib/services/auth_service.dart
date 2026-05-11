@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
+import '../utils/app_logger.dart';
 import 'secure_storage_manager.dart';
 
 class AuthService {
@@ -153,7 +154,8 @@ class AuthService {
       }
 
       return (success: true, error: null);
-    } catch (e) {
+    } catch (e, s) {
+      AppLogger.error('AuthService.updateProfile', e, s);
       return (success: false, error: 'Failed to update profile. Please try again.');
     }
   }
