@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- S letterform — white, no background (use on teal/dark surfaces) -->
+  <path d="M 256 88
+           C 404 88, 408 256, 256 256
+           C 104 256, 108 424, 256 424"
+        stroke="white"
+        stroke-width="56"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"/>
+
+  <!-- Split line — semi-transparent dark strip -->
+  <rect x="72" y="242" width="368" height="28" rx="14" fill="black" opacity="0.2"/>
+  <circle cx="86"  cy="256" r="10" fill="white" opacity="0.5"/>
+  <circle cx="426" cy="256" r="10" fill="white" opacity="0.5"/>
+</svg>

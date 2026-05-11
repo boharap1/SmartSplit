@@ -90,7 +90,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen>
         composing: TextRange.empty,
       );
     }
-    setState(() { _otp = clamped; _errorMsg = ''; });
+    // Only clear the error when the user actively types a new digit.
+    // When _ctrl.clear() is called programmatically (after a failed verify),
+    // clamped will be empty — we must NOT clear _errorMsg or the error
+    // disappears instantly before the user can read it.
+    setState(() {
+      _otp = clamped;
+      if (clamped.isNotEmpty) _errorMsg = '';
+    });
     if (clamped.length == 6) _verify();
   }
 

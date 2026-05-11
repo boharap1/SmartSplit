@@ -3,8 +3,9 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/secure_storage_manager.dart';
 import '../../utils/constants.dart';
-import '../../widgets/custom_text_field.dart';
+import '../../widgets/app_logo.dart';
 import '../../widgets/custom_button.dart';
+import '../../widgets/custom_text_field.dart';
 import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 
@@ -88,27 +89,8 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 60),
-
-                Icon(
-                  Icons.receipt_long_rounded,
-                  size: 80,
-                  color: AppConstants.primaryColor,
-                ),
-                const SizedBox(height: 24),
-
-                Text(
-                  AppConstants.appName,
-                  style: AppConstants.headingStyle,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-
-                Text(
-                  'Split bills, not friendships',
-                  style: AppConstants.subheadingStyle,
-                  textAlign: TextAlign.center,
-                ),
+                const SizedBox(height: 48),
+                const AppLogoWithWordmark(logoSize: 88),
                 const SizedBox(height: 48),
 
                 // Email field

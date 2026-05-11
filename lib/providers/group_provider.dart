@@ -289,6 +289,7 @@ class GroupProvider extends ChangeNotifier {
   Future<bool> leaveGroup({
     required String groupId,
     required String userId,
+    String? userName,
   }) async {
     _errorMessage = null;
     notifyListeners();
@@ -296,6 +297,7 @@ class GroupProvider extends ChangeNotifier {
     final result = await _groupService.leaveGroup(
       groupId: groupId,
       userId: userId,
+      leavingUserName: userName,
     );
 
     if (!result.success) {
@@ -338,6 +340,7 @@ class GroupProvider extends ChangeNotifier {
     required String groupId,
     required String memberId,
     required String requestingUserId,
+    String? removedMemberName,
   }) async {
     _errorMessage = null;
     notifyListeners();
@@ -346,6 +349,7 @@ class GroupProvider extends ChangeNotifier {
       groupId: groupId,
       memberId: memberId,
       requestingUserId: requestingUserId,
+      removedMemberName: removedMemberName,
     );
 
     if (!result.success) {
