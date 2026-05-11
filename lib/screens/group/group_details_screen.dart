@@ -374,6 +374,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
               final success = await groupProvider.leaveGroup(
                 groupId: group.groupId,
                 userId: userId,
+                userName: context.read<AuthProvider>().user?.name,
               );
               if (mounted) {
                 if (success) {
@@ -529,6 +530,7 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
                 groupId: group.groupId,
                 memberId: memberId,
                 requestingUserId: currentUserId,
+                removedMemberName: memberName,
               );
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(

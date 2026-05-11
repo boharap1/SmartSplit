@@ -834,9 +834,11 @@ class GroupsTab extends StatelessWidget {
       ),
     );
     if (confirm != true || !context.mounted) return;
+    final userName = context.read<AuthProvider>().user?.name;
     final success = await context.read<GroupProvider>().leaveGroup(
       groupId: group.groupId,
       userId: userId,
+      userName: userName,
     );
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

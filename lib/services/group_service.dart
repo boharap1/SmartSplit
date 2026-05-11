@@ -270,6 +270,7 @@ class GroupService {
   Future<({bool success, String? error})> leaveGroup({
     required String groupId,
     required String userId,
+    String? leavingUserName,
   }) async {
     try {
       final doc = await _groupsCollection.doc(groupId).get();
@@ -287,6 +288,20 @@ class GroupService {
         'members': FieldValue.arrayRemove([userId]),
         'adminIds': FieldValue.arrayRemove([userId]),
       });
+
+      final remaining = group.members.where((id) => id != userId).toList();
+      if (remaining.isNotEmpty) {
+        final name = leavingUserName ?? 'A member';
+        NotificationService.dispatch(
+          toUserIds: remaining,
+          type: NotificationType.memberLeft,
+          title: 'Member left ${group.groupName}',
+          body: '$name has left the group',
+          groupId: group.groupId,
+          fromUserName: leavingUserName,
+        );
+      }
+
       return (success: true, error: null);
     } catch (e) {
       return (success: false, error: 'Failed to leave group. Please try again.');
@@ -317,6 +332,7 @@ class GroupService {
     required String groupId,
     required String memberId,
     required String requestingUserId,
+    String? removedMemberName,
   }) async {
     try {
       final doc = await _groupsCollection.doc(groupId).get();
@@ -338,6 +354,32 @@ class GroupService {
         'members': FieldValue.arrayRemove([memberId]),
         'adminIds': FieldValue.arrayRemove([memberId]),
       });
+
+      // Notify the removed member directly.
+      NotificationService.dispatch(
+        toUserIds: [memberId],
+        type: NotificationType.memberLeft,
+        title: 'Removed from ${group.groupName}',
+        body: 'You have been removed from this group',
+        groupId: group.groupId,
+      );
+
+      // Notify remaining members (excluding the admin who performed the action).
+      final remaining = group.members
+          .where((id) => id != memberId && id != requestingUserId)
+          .toList();
+      if (remaining.isNotEmpty) {
+        final name = removedMemberName ?? 'A member';
+        NotificationService.dispatch(
+          toUserIds: remaining,
+          excludeUserId: requestingUserId,
+          type: NotificationType.memberLeft,
+          title: 'Member removed from ${group.groupName}',
+          body: '$name has been removed from the group',
+          groupId: group.groupId,
+        );
+      }
+
       return (success: true, error: null);
     } catch (e) {
       return (success: false, error: 'Failed to remove member. Please try again.');
