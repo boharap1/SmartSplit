@@ -14,14 +14,15 @@ import '../group/create_group_screen.dart';
 import '../group/join_group_screen.dart';
 import '../group/scan_receipt_screen.dart';
 import '../group/add_expense_screen.dart';
-import '../group/settlements_screen.dart';
 import 'app_menu.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../notifications/notification_center_screen.dart';
+import 'settle_up_screen.dart';
 
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key});
+  final VoidCallback? onSettleUp;
+  const HomeTab({super.key, this.onSettleUp});
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -531,35 +532,23 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   void _handleSettleUp() {
+    final userId = context.read<AuthProvider>().firebaseUser?.uid;
+    if (userId == null) return;
     final groups = context.read<GroupProvider>().groups;
-    final userId = context.read<AuthProvider>().firebaseUser?.uid ?? '';
     if (groups.isEmpty) {
       _showNoGroupsPrompt('settle up');
       return;
     }
-    if (groups.length == 1) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SettlementsScreen(
-            group: groups.first,
-            currentUserId: userId,
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SettleUpScreen(
+          groupBalances: _groupBalances,
+          groups: groups,
+          currentUserId: userId,
         ),
-      );
-      return;
-    }
-    _pickGroup('Settle up for which group?', (g) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SettlementsScreen(
-            group: g,
-            currentUserId: userId,
-          ),
-        ),
-      );
-    });
+      ),
+    );
   }
 
   void _handleAddExpense() {
@@ -803,8 +792,9 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  void _pickGroup(String title, void Function(GroupModel) onPick) {
-    final groups = context.read<GroupProvider>().groups;
+  void _pickGroup(String title, void Function(GroupModel) onPick,
+      {List<GroupModel>? groups}) {
+    groups ??= context.read<GroupProvider>().groups;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -839,7 +829,7 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    ...groups.map(
+                    ...groups!.map(
                       (g) => ListTile(
                         leading: CircleAvatar(
                           backgroundColor: AppConstants.primaryColor.withValues(

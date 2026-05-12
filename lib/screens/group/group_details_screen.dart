@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../models/group_model.dart';
 import '../../models/user_model.dart';
+import '../../models/expense_model.dart';
 import '../../services/settlement_service.dart';
 import '../../utils/constants.dart';
 import '../../widgets/custom_text_field.dart';
@@ -26,6 +27,13 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   Set<String> _knownMemberIds = {};
   bool _isLoadingMembers = true;
 
+  Map<String, double> _contributions = {};
+  Map<String, int> _expenseCounts = {};
+  double _contributionTotal = 0;
+  String _contributionPeriod = '';
+  bool _isLoadingContributions = true;
+  bool _contributionsLoaded = false;
+
   // Countdown timer for active invite code
   Timer? _countdownTimer;
   int _secondsRemaining = 0;
@@ -44,6 +52,72 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     _countdownTimer?.cancel();
     context.read<GroupProvider>().clearSelectedGroup();
     super.dispose();
+  }
+
+  Future<void> _loadContributions(String groupId) async {
+    if (!mounted) return;
+    setState(() => _isLoadingContributions = true);
+    try {
+      final firestore = FirebaseFirestore.instance;
+      DateTime? sinceDate;
+      String period = 'All Time';
+
+      // Find most recent completed settlement
+      try {
+        final settleSnap = await firestore
+            .collection('groups')
+            .doc(groupId)
+            .collection('settlements')
+            .where('status', isEqualTo: 'completed')
+            .orderBy('createdAt', descending: true)
+            .limit(1)
+            .get();
+        if (settleSnap.docs.isNotEmpty) {
+          final ts =
+              settleSnap.docs.first.data()['createdAt'] as Timestamp?;
+          sinceDate = ts?.toDate();
+          if (sinceDate != null) period = 'Since Last Settlement';
+        }
+      } catch (_) {}
+
+      // Query expenses (filtered by date if a settlement exists)
+      Query<Map<String, dynamic>> query = firestore
+          .collection('groups')
+          .doc(groupId)
+          .collection('expenses');
+      if (sinceDate != null) {
+        query = query.where(
+          'createdAt',
+          isGreaterThan: Timestamp.fromDate(sinceDate),
+        );
+      }
+
+      final expSnap = await query.get();
+      final Map<String, double> contributions = {};
+      final Map<String, int> counts = {};
+
+      for (final doc in expSnap.docs) {
+        final e = ExpenseModel.fromFirestore(doc);
+        contributions[e.paidBy] =
+            (contributions[e.paidBy] ?? 0) + e.totalAmount;
+        counts[e.paidBy] = (counts[e.paidBy] ?? 0) + 1;
+      }
+
+      final total =
+          contributions.values.fold(0.0, (a, b) => a + b);
+
+      if (mounted) {
+        setState(() {
+          _contributions = contributions;
+          _expenseCounts = counts;
+          _contributionTotal = total;
+          _contributionPeriod = period;
+          _isLoadingContributions = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingContributions = false);
+    }
   }
 
   Future<void> _fetchMemberDetails(List<String> memberIds) async {
@@ -656,6 +730,12 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
             _fetchMemberDetails(group.members);
           }
 
+          // Load contributions once on first group load
+          if (!_contributionsLoaded) {
+            _contributionsLoaded = true;
+            _loadContributions(group.groupId);
+          }
+
           // Start/stop invite countdown when invite changes
           final newCode =
               group.hasActiveInvite ? group.activeInviteCode : null;
@@ -975,6 +1055,16 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
     bool isAdmin,
     String currentUserId,
   ) {
+    final cs = context.read<SettingsProvider>().currencySymbol;
+
+    // Owner first, then sorted by contribution descending
+    final sorted = [...group.members];
+    sorted.sort((a, b) {
+      if (a == group.createdBy) return -1;
+      if (b == group.createdBy) return 1;
+      return (_contributions[b] ?? 0).compareTo(_contributions[a] ?? 0);
+    });
+
     return Container(
       padding: const EdgeInsets.all(AppConstants.largePadding),
       decoration: BoxDecoration(
@@ -991,21 +1081,18 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Section header ──────────────────────────────────────
           Row(
             children: [
               const Icon(Icons.people, color: AppConstants.primaryColor),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               const Text(
                 'Members',
-                style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppConstants.primaryColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
@@ -1020,99 +1107,279 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
 
-          if (_isLoadingMembers)
+          // ── Contributions sub-header ─────────────────────────────
+          if (!_isLoadingContributions && _contributionTotal > 0.01) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppConstants.primaryColor.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.bar_chart_rounded,
+                    size: 15,
+                    color: AppConstants.primaryColor.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Contributions · $_contributionPeriod',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppConstants.primaryColor.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'Total: $cs${_contributionTotal.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppConstants.primaryColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+
+          // ── Member list ─────────────────────────────────────────
+          if (_isLoadingMembers || _isLoadingContributions)
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(20),
                 child: CircularProgressIndicator(
-                  color: AppConstants.primaryColor,
-                ),
+                    color: AppConstants.primaryColor),
               ),
             )
           else
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: group.members.length,
-              separatorBuilder: (_, _) => const Divider(),
-              itemBuilder: (context, index) {
-                final memberId = group.members[index];
+              itemCount: sorted.length,
+              separatorBuilder: (_, _) =>
+                  Divider(height: 1, color: Colors.grey[100]),
+              itemBuilder: (_, index) {
+                final memberId = sorted[index];
                 final member = _memberCache[memberId];
                 final isGroupOwner = group.createdBy == memberId;
                 final isMemberAdmin = group.adminIds.contains(memberId);
                 final isCurrentUser = memberId == currentUserId;
+                final contribution = _contributions[memberId] ?? 0;
+                final count = _expenseCounts[memberId] ?? 0;
+                final pct = _contributionTotal > 0
+                    ? (contribution / _contributionTotal * 100)
+                    : 0.0;
 
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: isGroupOwner
-                        ? AppConstants.primaryColor
-                        : isMemberAdmin
-                            ? Colors.orange.shade600
-                            : Colors.grey[300],
-                    child: Text(
-                      member?.name.isNotEmpty == true
-                          ? member!.name[0].toUpperCase()
-                          : '?',
-                      style: TextStyle(
-                        color: isGroupOwner || isMemberAdmin
-                            ? Colors.white
-                            : Colors.black87,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  title: Row(
-                    children: [
-                      Text(
-                        member?.name ?? 'Unknown User',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (isCurrentUser)
-                        const Text(
-                          ' (You)',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontWeight: FontWeight.normal,
-                          ),
-                        ),
-                    ],
-                  ),
-                  subtitle: isGroupOwner
-                      ? const Text(
-                          'Owner',
-                          style: TextStyle(
-                            color: AppConstants.primaryColor,
-                            fontSize: 12,
-                          ),
-                        )
-                      : isMemberAdmin
-                          ? const Text(
-                              'Admin',
-                              style: TextStyle(
-                                color: Colors.orange,
-                                fontSize: 12,
-                              ),
-                            )
-                          : null,
-                  trailing: _buildMemberTrailing(
-                    group,
-                    memberId,
-                    member,
-                    isGroupOwner,
-                    isMemberAdmin,
-                    isCurrentUser,
-                    isOwner,
-                    isAdmin,
-                  ),
+                return _buildMemberRow(
+                  group: group,
+                  memberId: memberId,
+                  member: member,
+                  isGroupOwner: isGroupOwner,
+                  isMemberAdmin: isMemberAdmin,
+                  isCurrentUser: isCurrentUser,
+                  isOwner: isOwner,
+                  isAdmin: isAdmin,
+                  contribution: contribution,
+                  expenseCount: count,
+                  pct: pct,
+                  cs: cs,
                 );
               },
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMemberRow({
+    required GroupModel group,
+    required String memberId,
+    required UserModel? member,
+    required bool isGroupOwner,
+    required bool isMemberAdmin,
+    required bool isCurrentUser,
+    required bool isOwner,
+    required bool isAdmin,
+    required double contribution,
+    required int expenseCount,
+    required double pct,
+    required String cs,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _buildMemberAvatar(member, isGroupOwner, isMemberAdmin),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            member?.name ?? 'Unknown',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isCurrentUser)
+                          Text(
+                            ' (You)',
+                            style: TextStyle(
+                                color: Colors.grey[500], fontSize: 12),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        if (isGroupOwner)
+                          _roleBadge('Owner', AppConstants.primaryColor)
+                        else if (isMemberAdmin)
+                          _roleBadge('Admin', Colors.orange),
+                        if (expenseCount > 0) ...[
+                          if (isGroupOwner || isMemberAdmin)
+                            const SizedBox(width: 6),
+                          Text(
+                            '$expenseCount expense${expenseCount != 1 ? 's' : ''} paid',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[500]),
+                          ),
+                        ] else if (!isGroupOwner && !isMemberAdmin)
+                          Text(
+                            'No expenses yet',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[400]),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Amount + % badge
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    contribution > 0
+                        ? '$cs${contribution.toStringAsFixed(2)}'
+                        : '—',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: contribution > 0
+                          ? Colors.black87
+                          : Colors.grey[400],
+                    ),
+                  ),
+                  if (pct > 0) ...[
+                    const SizedBox(height: 3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppConstants.primaryColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${pct.toStringAsFixed(1)}%',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppConstants.primaryColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              _buildMemberTrailing(
+                    group, memberId, member, isGroupOwner, isMemberAdmin,
+                    isCurrentUser, isOwner, isAdmin) ??
+                  const SizedBox(width: 4),
+            ],
+          ),
+          // Progress bar
+          if (pct > 0) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: pct / 100,
+                minHeight: 5,
+                backgroundColor: Colors.grey[100],
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  AppConstants.primaryColor.withValues(
+                      alpha: pct >= 50 ? 1.0 : 0.55),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemberAvatar(
+      UserModel? member, bool isGroupOwner, bool isMemberAdmin) {
+    final bgColor = isGroupOwner
+        ? AppConstants.primaryColor
+        : isMemberAdmin
+            ? Colors.orange.shade600
+            : Colors.grey.shade200;
+    final textColor =
+        isGroupOwner || isMemberAdmin ? Colors.white : Colors.black87;
+
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: bgColor,
+      backgroundImage: member?.hasProfilePicture == true
+          ? NetworkImage(member!.profilePicture!)
+          : null,
+      child: member?.hasProfilePicture != true
+          ? Text(
+              member?.name.isNotEmpty == true
+                  ? member!.name[0].toUpperCase()
+                  : '?',
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 17,
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _roleBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
       ),
     );
   }

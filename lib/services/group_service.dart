@@ -10,10 +10,23 @@ class GroupService {
   CollectionReference<Map<String, dynamic>> get _groupsCollection =>
       _firestore.collection('groups');
 
+  Future<void> _logEvent(
+    String groupId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      await _groupsCollection
+          .doc(groupId)
+          .collection('events')
+          .add({...data, 'createdAt': FieldValue.serverTimestamp()});
+    } catch (_) {}
+  }
+
   Future<({GroupModel? group, String? error})> createGroup({
     required String groupName,
     String? description,
     required String createdBy,
+    String? creatorName,
   }) async {
     try {
       final String groupCode = await _generateUniqueCode();
@@ -31,6 +44,11 @@ class GroupService {
       );
 
       await _groupsCollection.doc(groupId).set(group.toFirestore());
+      await _logEvent(groupId, {
+        'type': 'group_created',
+        'userId': createdBy,
+        'userName': creatorName ?? 'Unknown',
+      });
       return (group: group, error: null);
     } catch (e) {
       return (group: null, error: 'Failed to create group. Please try again.');
@@ -140,6 +158,11 @@ class GroupService {
 
       await _groupsCollection.doc(group.groupId).update({
         'members': FieldValue.arrayUnion([userId]),
+      });
+      await _logEvent(group.groupId, {
+        'type': 'member_joined',
+        'userId': userId,
+        'userName': joiningUserName ?? 'Someone',
       });
 
       // Notify existing members that someone joined.
@@ -287,6 +310,11 @@ class GroupService {
       await _groupsCollection.doc(groupId).update({
         'members': FieldValue.arrayRemove([userId]),
         'adminIds': FieldValue.arrayRemove([userId]),
+      });
+      await _logEvent(groupId, {
+        'type': 'member_left',
+        'userId': userId,
+        'userName': leavingUserName ?? 'Someone',
       });
 
       final remaining = group.members.where((id) => id != userId).toList();

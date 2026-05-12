@@ -5,7 +5,6 @@ import '../../providers/group_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../utils/constants.dart';
 import 'home_tab.dart';
-import 'groups_tab.dart';
 import 'activity_tab.dart';
 import 'insights_tab.dart';
 
@@ -20,18 +19,20 @@ class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
   bool _initialized = false;
 
-  final List<Widget> _tabs = const [
-    HomeTab(),
-    GroupsTab(),
-    ActivityTab(),
-    InsightsTab(),
-  ];
+  late final List<Widget> _tabs;
 
   @override
   void initState() {
     super.initState();
+    _tabs = [
+      HomeTab(onSettleUp: _navigateToSettleUp),
+      const ActivityTab(),
+      const InsightsTab(),
+    ];
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowWelcome());
   }
+
+  void _navigateToSettleUp() => setState(() => _currentIndex = 1);
 
   void _maybeShowWelcome() {
     if (!mounted) return;
@@ -100,15 +101,6 @@ class _MainNavigationState extends State<MainNavigation> {
               icon: Icon(Icons.group_outlined, color: cs.onSurfaceVariant),
               selectedIcon: const Icon(
                 Icons.group_rounded,
-                color: AppConstants.primaryColor,
-              ),
-              label: 'Groups',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined,
-                  color: cs.onSurfaceVariant),
-              selectedIcon: const Icon(
-                Icons.receipt_long_rounded,
                 color: AppConstants.primaryColor,
               ),
               label: 'Activity',

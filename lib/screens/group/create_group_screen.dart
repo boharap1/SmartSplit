@@ -93,10 +93,11 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     // Create the group
     final result = await context.read<GroupProvider>().createGroup(
       groupName: _nameController.text.trim(),
-      description: _descriptionController.text.trim().isEmpty 
-          ? null 
+      description: _descriptionController.text.trim().isEmpty
+          ? null
           : _descriptionController.text.trim(),
       createdBy: userId,
+      creatorName: context.read<AuthProvider>().user?.name,
     );
 
     // Handle result

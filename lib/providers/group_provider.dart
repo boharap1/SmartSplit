@@ -189,6 +189,7 @@ class GroupProvider extends ChangeNotifier {
     required String groupName,
     String? description,
     required String createdBy,
+    String? creatorName,
   }) async {
     _status = GroupStatus.loading;
     _errorMessage = null;
@@ -198,6 +199,7 @@ class GroupProvider extends ChangeNotifier {
       groupName: groupName,
       description: description,
       createdBy: createdBy,
+      creatorName: creatorName,
     );
 
     if (result.group != null) {
