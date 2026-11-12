@@ -151,7 +151,7 @@ class NotificationService {
     String? fromUserName,
   }) async {
     try {
-      await FirebaseFunctions.instance
+      await FirebaseFunctions.instanceFor(region: 'europe-west2')
           .httpsCallable('dispatchNotification')
           .call({
         'toUserIds': toUserIds,
